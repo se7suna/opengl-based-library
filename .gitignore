@@ -11,6 +11,21 @@ CTestTestfile.cmake
 _deps
 CMakeUserPresets.json
 
+# Visual Studio
+.vs/
+*.VC.db
+*.ipch
+*.suo
+
+# Build outputs
+build/
+Debug/
+Release/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
 # CLion
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
