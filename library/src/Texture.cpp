@@ -68,4 +68,59 @@ PBRTextureMaterial LoadMaterial_WoodVeneerOak_7760() {
     return mat;
 }
 
+PBRTextureMaterial LoadMaterial_WoodFloorAsh_4186() {
+    PBRTextureMaterial mat{};
+    mat.albedoTex    = LoadTexture2D("materials/Poliigon_WoodFloorAsh_4186_Preview1/1K/Poliigon_WoodFloorAsh_4186_BaseColor.jpg", true);
+    mat.normalTex    = LoadTexture2D("materials/Poliigon_WoodFloorAsh_4186_Preview1/1K/Poliigon_WoodFloorAsh_4186_Normal.png", false);
+    mat.metallicTex  = LoadTexture2D("materials/Poliigon_WoodFloorAsh_4186_Preview1/1K/Poliigon_WoodFloorAsh_4186_Metallic.jpg", false);
+    mat.roughnessTex = LoadTexture2D("materials/Poliigon_WoodFloorAsh_4186_Preview1/1K/Poliigon_WoodFloorAsh_4186_Roughness.jpg", false);
+    mat.aoTex        = LoadTexture2D("materials/Poliigon_WoodFloorAsh_4186_Preview1/1K/Poliigon_WoodFloorAsh_4186_AmbientOcclusion.jpg", false);
+    return mat;
+}
+
+PBRTextureMaterial LoadMaterial_MetalGalvanizedZinc_7184() {
+    PBRTextureMaterial mat{};
+    mat.albedoTex    = LoadTexture2D("materials/Poliigon_MetalGalvanizedZinc_7184/512/Poliigon_MetalGalvanizedZinc_7184_BaseColor.jpg", true);
+    mat.normalTex    = LoadTexture2D("materials/Poliigon_MetalGalvanizedZinc_7184/512/Poliigon_MetalGalvanizedZinc_7184_Normal.png", false);
+    mat.metallicTex  = LoadTexture2D("materials/Poliigon_MetalGalvanizedZinc_7184/512/Poliigon_MetalGalvanizedZinc_7184_Metallic.jpg", false);
+    mat.roughnessTex = LoadTexture2D("materials/Poliigon_MetalGalvanizedZinc_7184/512/Poliigon_MetalGalvanizedZinc_7184_Roughness.jpg", false);
+    mat.aoTex        = LoadTexture2D("materials/Poliigon_MetalGalvanizedZinc_7184/512/Poliigon_MetalGalvanizedZinc_7184_AmbientOcclusion.jpg", false);
+    return mat;
+}
+
+PBRTextureMaterial LoadMaterial_MetalPaintedMatte_7037() {
+    PBRTextureMaterial mat{};
+    mat.albedoTex    = LoadTexture2D("materials/Poliigon_MetalPaintedMatte_7037_Preview1/1K/Poliigon_MetalPaintedMatte_7037_BaseColor.jpg", true);
+    mat.normalTex    = LoadTexture2D("materials/Poliigon_MetalPaintedMatte_7037_Preview1/1K/Poliigon_MetalPaintedMatte_7037_Normal.png", false);
+    mat.metallicTex  = LoadTexture2D("materials/Poliigon_MetalPaintedMatte_7037_Preview1/1K/Poliigon_MetalPaintedMatte_7037_Metallic.jpg", false);
+    mat.roughnessTex = LoadTexture2D("materials/Poliigon_MetalPaintedMatte_7037_Preview1/1K/Poliigon_MetalPaintedMatte_7037_Roughness.jpg", false);
+    mat.aoTex        = LoadTexture2D("materials/Poliigon_MetalPaintedMatte_7037_Preview1/1K/Poliigon_MetalPaintedMatte_7037_AmbientOcclusion.jpg", false);
+    return mat;
+}
+
+PBRTextureMaterial LoadMaterial_FabricLeatherCowhide_001() {
+    PBRTextureMaterial mat{};
+    // FabricLeatherCowhide 使用 COL 作为 BaseColor，REFL 作为 Metallic，GLOSS 作为 Roughness（需要反转，但这里先直接用，shader中处理）
+    mat.albedoTex    = LoadTexture2D("materials/FabricLeatherCowhide001/FabricLeatherCowhide001_COL_VAR1_1K.jpg", true);
+    mat.normalTex    = LoadTexture2D("materials/FabricLeatherCowhide001/FabricLeatherCowhide001_NRM_1K.jpg", false);
+    mat.metallicTex  = LoadTexture2D("materials/FabricLeatherCowhide001/FabricLeatherCowhide001_REFL_1K.jpg", false);
+    // GLOSS 是光滑度，Roughness 是粗糙度，所以 GLOSS = 1 - Roughness，但这里先直接使用
+    // 注意：shader中可能需要反转，或者这里创建一个反转的纹理，暂时直接使用
+    mat.roughnessTex = LoadTexture2D("materials/FabricLeatherCowhide001/FabricLeatherCowhide001_GLOSS_1K.jpg", false);
+    mat.aoTex        = LoadTexture2D("materials/FabricLeatherCowhide001/FabricLeatherCowhide001_AO_1K.jpg", false);
+    return mat;
+}
+
+PBRTextureMaterial LoadMaterial_TilesTravertine_001() {
+    PBRTextureMaterial mat{};
+    // TilesTravertine 使用 COL 作为 BaseColor，REFL 作为 Metallic，GLOSS 作为 Roughness
+    mat.albedoTex    = LoadTexture2D("materials/TilesTravertine001/TilesTravertine001_COL_1K.jpg", true);
+    mat.normalTex    = LoadTexture2D("materials/TilesTravertine001/TilesTravertine001_NRM_1K.jpg", false);
+    mat.metallicTex  = LoadTexture2D("materials/TilesTravertine001/TilesTravertine001_REFL_1K.jpg", false);
+    // GLOSS 是光滑度，Roughness 是粗糙度，暂时直接使用
+    mat.roughnessTex = LoadTexture2D("materials/TilesTravertine001/TilesTravertine001_GLOSS_1K.jpg", false);
+    mat.aoTex        = LoadTexture2D("materials/TilesTravertine001/TilesTravertine001_AO_1K.jpg", false);
+    return mat;
+}
+
 

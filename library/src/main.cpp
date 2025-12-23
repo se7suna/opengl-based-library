@@ -11,7 +11,7 @@
 #include "Texture.h"
 
 // 相机相关全局变量
-Camera camera(glm::vec3(0.0f, 0.5f, 5.0f));
+Camera camera(glm::vec3(0.0f, 1.5f, 8.0f));  // 调整相机初始位置，使其能更好地观察图书馆
 float lastX = 400.0f;
 float lastY = 300.0f;
 bool firstMouse = true;
@@ -22,13 +22,43 @@ int windowHeight = 600;
 
 // 鼠标捕获状态：true 表示用于视角控制（锁定到窗口中间），false 表示释放鼠标操作 UI
 bool mouseCaptured = true;
-bool ctrlWasPressed = false; // 用于检测 Ctrl 的“按下边缘”
+bool ctrlWasPressed = false; // 用于检测 Ctrl 的"按下边缘"
 
 // 回调函数声明
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 void processInput(GLFWwindow* window);
+
+// 辅助函数：使用PBR材质渲染模型
+void renderModelWithPBRMaterial(Shader& pbrShader, Model& model, PBRTextureMaterial& mat, 
+                                 glm::mat4& modelMatrix, bool useGloss = false) {
+    pbrShader.use();
+    pbrShader.setMat4("model", modelMatrix);
+    
+    // 设置是否使用GLOSS贴图（需要反转roughness）
+    pbrShader.setBool("useGlossMap", useGloss);
+    
+    // 绑定材质纹理
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, mat.albedoTex);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, mat.normalTex);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, mat.metallicTex);
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, mat.roughnessTex);
+    glActiveTexture(GL_TEXTURE4);
+    glBindTexture(GL_TEXTURE_2D, mat.aoTex);
+    
+    // 材质参数（真实值来自贴图，这些是乘子或默认值）
+    pbrShader.setVec3("material.albedo", glm::vec3(1.0f));
+    pbrShader.setFloat("material.metallic", 0.0f);
+    pbrShader.setFloat("material.roughness", 0.6f);
+    pbrShader.setFloat("material.ao", 1.0f);
+    
+    model.Draw(pbrShader);
+}
 
 int main() {
     // ========= 解决控制台乱码（Windows专属） =========
@@ -43,7 +73,7 @@ int main() {
 
     windowWidth = 800;
     windowHeight = 600;
-    GLFWwindow* window = glfwCreateWindow(windowWidth, windowHeight, "First Person Camera - Library Scene", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(windowWidth, windowHeight, "Library Scene - First Person Camera", nullptr, nullptr);
     if (!window) {
         std::cerr << "GLFW窗口创建失败" << std::endl;
         glfwTerminate();
@@ -66,46 +96,58 @@ int main() {
 
     glEnable(GL_DEPTH_TEST);
 
-    // 使用相对路径（相对于可执行文件所在目录）
-    // 注意：运行时需要确保 shaders/ 和 models/ 文件夹与 .exe 在同一目录
-    Model model2("models/cube.obj");
-    Model model1("models/geodesic_classI_2.obj");
+    // ========= 加载所有模型 =========
+    Model bookshelf("models/bookshelf.obj");
+    Model libraryTable("models/library_table.obj");
+    Model stool("models/stool.obj");
+    Model waterDispenser("models/water_dispenser.obj");
+    Model cube("models/cube.obj");
+    Model sphere("models/sphere.obj");
 
-    // Blinn-Phong 着色器（继续用于 model2）
-    Shader phongShader("shaders/basic.vert", "shaders/basic.frag");
+    // ========= 加载所有 PBR 材质 =========
+    PBRTextureMaterial oakMat = LoadMaterial_WoodVeneerOak_7760();        // 橡木（用于书架、桌子）
+    PBRTextureMaterial woodFloorMat = LoadMaterial_WoodFloorAsh_4186();   // 木地板（用于地板）
+    PBRTextureMaterial metalMat = LoadMaterial_MetalGalvanizedZinc_7184(); // 金属（用于饮水机）
+    PBRTextureMaterial paintedMetalMat = LoadMaterial_MetalPaintedMatte_7037(); // 喷漆金属
+    PBRTextureMaterial leatherMat = LoadMaterial_FabricLeatherCowhide_001(); // 皮革（用于椅子）
+    PBRTextureMaterial tileMat = LoadMaterial_TilesTravertine_001();      // 大理石（用于墙面装饰）
 
-    // PBR 着色器（用于 model1）
+    // PBR 着色器
     Shader pbrShader("shaders/pbr.vert", "shaders/pbr.frag");
 
-    // 加载 WoodVeneerOak PBR 纹理材质
-    PBRTextureMaterial oakMat = LoadMaterial_WoodVeneerOak_7760();
-
-    // ========= Blinn-Phong 光照参数（只给 model2 用）=========
-    phongShader.use();
-    phongShader.setVec3("material.diffuse", glm::vec3(0.8f));    // 漫反射：浅灰
-    phongShader.setVec3("material.specular", glm::vec3(1.0f));   // 镜面反射：白色
-    phongShader.setFloat("material.shininess", 64.0f);           // 高光锐利度
-
-    phongShader.setVec3("dirLights[0].direction", glm::vec3(0.5f, -1.0f, -0.5f));  // 斜右下
-    phongShader.setVec3("dirLights[0].color", glm::vec3(1.0f, 1.0f, 0.8f));        // 暖白色
-    phongShader.setFloat("dirLights[0].intensity", 1.2f);
-
-    phongShader.setVec3("dirLights[1].direction", glm::vec3(-0.5f, -1.0f, 0.5f));   // 斜左下
-    phongShader.setVec3("dirLights[1].color", glm::vec3(0.8f, 1.0f, 1.0f));        // 冷白色
-    phongShader.setFloat("dirLights[1].intensity", 1.0f);
-
-    // ========= PBR 光照参数（简单两个点光源）=========
+    // ========= 设置 PBR 光照系统（6个点光源营造图书馆氛围）=========
     pbrShader.use();
-    // 相机位置先设一次（每帧会更新）
-    pbrShader.setInt("lightCount", 2);
-    // 点光 1
-    pbrShader.setVec3("lights[0].position", glm::vec3(2.0f, 4.0f, 2.0f));
-    pbrShader.setVec3("lights[0].color", glm::vec3(1.0f, 0.95f, 0.8f));
-    pbrShader.setFloat("lights[0].intensity", 40.0f);
-    // 点光 2
-    pbrShader.setVec3("lights[1].position", glm::vec3(-2.0f, 4.0f, -1.5f));
-    pbrShader.setVec3("lights[1].color", glm::vec3(0.8f, 0.9f, 1.0f));
-    pbrShader.setFloat("lights[1].intensity", 30.0f);
+    pbrShader.setInt("lightCount", 6);
+    
+    // 主灯光（中央上方，暖白色）
+    pbrShader.setVec3("lights[0].position", glm::vec3(0.0f, 4.5f, 0.0f));
+    pbrShader.setVec3("lights[0].color", glm::vec3(1.0f, 0.95f, 0.85f));
+    pbrShader.setFloat("lights[0].intensity", 50.0f);
+    
+    // 左侧灯光（书架区域）
+    pbrShader.setVec3("lights[1].position", glm::vec3(-5.0f, 4.0f, 0.0f));
+    pbrShader.setVec3("lights[1].color", glm::vec3(1.0f, 0.98f, 0.9f));
+    pbrShader.setFloat("lights[1].intensity", 40.0f);
+    
+    // 右侧灯光（书架区域）
+    pbrShader.setVec3("lights[2].position", glm::vec3(5.0f, 4.0f, 0.0f));
+    pbrShader.setVec3("lights[2].color", glm::vec3(1.0f, 0.98f, 0.9f));
+    pbrShader.setFloat("lights[2].intensity", 40.0f);
+    
+    // 前方灯光（阅读区）
+    pbrShader.setVec3("lights[3].position", glm::vec3(0.0f, 4.0f, -4.0f));
+    pbrShader.setVec3("lights[3].color", glm::vec3(0.95f, 0.98f, 1.0f));
+    pbrShader.setFloat("lights[3].intensity", 35.0f);
+    
+    // 后方灯光
+    pbrShader.setVec3("lights[4].position", glm::vec3(0.0f, 4.0f, 4.0f));
+    pbrShader.setVec3("lights[4].color", glm::vec3(0.9f, 0.95f, 1.0f));
+    pbrShader.setFloat("lights[4].intensity", 30.0f);
+    
+    // 角落灯光（饮水机区域，稍冷色调）
+    pbrShader.setVec3("lights[5].position", glm::vec3(6.0f, 3.5f, 6.0f));
+    pbrShader.setVec3("lights[5].color", glm::vec3(0.85f, 0.9f, 1.0f));
+    pbrShader.setFloat("lights[5].intensity", 25.0f);
 
     // 绑定采样器编号（纹理单元）
     pbrShader.setInt("albedoMap",    0);
@@ -133,54 +175,122 @@ int main() {
             100.0f
         );
 
-        // 更新 Blinn-Phong shader 的矩阵和相机
-        phongShader.use();
-        phongShader.setMat4("view", view);
-        phongShader.setMat4("projection", projection);
-        phongShader.setVec3("viewPos", camera.Position);
-
         // 更新 PBR shader 的矩阵和相机
         pbrShader.use();
         pbrShader.setMat4("view", view);
         pbrShader.setMat4("projection", projection);
         pbrShader.setVec3("camPos", camera.Position);
 
-        glClearColor(0.05f, 0.05f, 0.1f, 1.0f);
+        glClearColor(0.05f, 0.05f, 0.08f, 1.0f);  // 深色背景，营造图书馆氛围
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // ========= 使用 PBR 渲染 model1（左边）=========
-        pbrShader.use();
+        // ========= 渲染地板 =========
+        glm::mat4 floorMatrix = glm::mat4(1.0f);
+        floorMatrix = glm::translate(floorMatrix, glm::vec3(0.0f, 0.0f, 0.0f));
+        floorMatrix = glm::scale(floorMatrix, glm::vec3(15.0f, 0.1f, 15.0f));  // 大尺寸地板
+        renderModelWithPBRMaterial(pbrShader, cube, woodFloorMat, floorMatrix);
 
-        // 绑定 WoodVeneerOak 纹理到各个纹理单元
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, oakMat.albedoTex);
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, oakMat.normalTex);
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, oakMat.metallicTex);
-        glActiveTexture(GL_TEXTURE3);
-        glBindTexture(GL_TEXTURE_2D, oakMat.roughnessTex);
-        glActiveTexture(GL_TEXTURE4);
-        glBindTexture(GL_TEXTURE_2D, oakMat.aoTex);
+        // ========= 渲染书架（左侧墙，多个书架）=========
+        // 左侧书架 1
+        glm::mat4 bookshelf1Matrix = glm::mat4(1.0f);
+        bookshelf1Matrix = glm::translate(bookshelf1Matrix, glm::vec3(-6.0f, 1.0f, -3.0f));
+        bookshelf1Matrix = glm::rotate(bookshelf1Matrix, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        bookshelf1Matrix = glm::scale(bookshelf1Matrix, glm::vec3(0.8f));
+        renderModelWithPBRMaterial(pbrShader, bookshelf, oakMat, bookshelf1Matrix);
 
-        // 暂时用一个“中等粗糙、非金属、AO=1”的默认数值做兜底
-        pbrShader.setVec3("material.albedo", glm::vec3(1.0f)); // 真实颜色来自贴图，这个只是乘子
-        pbrShader.setFloat("material.metallic", 0.0f);
-        pbrShader.setFloat("material.roughness", 0.6f);
-        pbrShader.setFloat("material.ao", 1.0f);
+        // 左侧书架 2
+        glm::mat4 bookshelf2Matrix = glm::mat4(1.0f);
+        bookshelf2Matrix = glm::translate(bookshelf2Matrix, glm::vec3(-6.0f, 1.0f, 0.0f));
+        bookshelf2Matrix = glm::rotate(bookshelf2Matrix, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        bookshelf2Matrix = glm::scale(bookshelf2Matrix, glm::vec3(0.8f));
+        renderModelWithPBRMaterial(pbrShader, bookshelf, oakMat, bookshelf2Matrix);
 
-        glm::mat4 modelMat1 = glm::mat4(1.0f);
-        modelMat1 = glm::translate(modelMat1, glm::vec3(-1.2f, 0.0f, 0.0f));
-        modelMat1 = glm::scale(modelMat1, glm::vec3(0.8f));
-        pbrShader.setMat4("model", modelMat1);
-        model1.Draw(pbrShader);
+        // 左侧书架 3
+        glm::mat4 bookshelf3Matrix = glm::mat4(1.0f);
+        bookshelf3Matrix = glm::translate(bookshelf3Matrix, glm::vec3(-6.0f, 1.0f, 3.0f));
+        bookshelf3Matrix = glm::rotate(bookshelf3Matrix, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        bookshelf3Matrix = glm::scale(bookshelf3Matrix, glm::vec3(0.8f));
+        renderModelWithPBRMaterial(pbrShader, bookshelf, oakMat, bookshelf3Matrix);
 
-        // ========= 使用原 Blinn-Phong 渲染 model2（右边）=========
-        phongShader.use();
-        glm::mat4 modelMat2 = glm::mat4(1.0f);
-        modelMat2 = glm::translate(modelMat2, glm::vec3(0.8f, 0.0f, 0.0f));
-        phongShader.setMat4("model", modelMat2);
-        model2.Draw(phongShader);
+        // ========= 渲染书架（右侧墙）=========
+        // 右侧书架 1
+        glm::mat4 bookshelf4Matrix = glm::mat4(1.0f);
+        bookshelf4Matrix = glm::translate(bookshelf4Matrix, glm::vec3(6.0f, 1.0f, -3.0f));
+        bookshelf4Matrix = glm::rotate(bookshelf4Matrix, glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        bookshelf4Matrix = glm::scale(bookshelf4Matrix, glm::vec3(0.8f));
+        renderModelWithPBRMaterial(pbrShader, bookshelf, oakMat, bookshelf4Matrix);
+
+        // 右侧书架 2
+        glm::mat4 bookshelf5Matrix = glm::mat4(1.0f);
+        bookshelf5Matrix = glm::translate(bookshelf5Matrix, glm::vec3(6.0f, 1.0f, 0.0f));
+        bookshelf5Matrix = glm::rotate(bookshelf5Matrix, glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        bookshelf5Matrix = glm::scale(bookshelf5Matrix, glm::vec3(0.8f));
+        renderModelWithPBRMaterial(pbrShader, bookshelf, oakMat, bookshelf5Matrix);
+
+        // 右侧书架 3
+        glm::mat4 bookshelf6Matrix = glm::mat4(1.0f);
+        bookshelf6Matrix = glm::translate(bookshelf6Matrix, glm::vec3(6.0f, 1.0f, 3.0f));
+        bookshelf6Matrix = glm::rotate(bookshelf6Matrix, glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        bookshelf6Matrix = glm::scale(bookshelf6Matrix, glm::vec3(0.8f));
+        renderModelWithPBRMaterial(pbrShader, bookshelf, oakMat, bookshelf6Matrix);
+
+        // ========= 渲染中央桌子 =========
+        glm::mat4 tableMatrix = glm::mat4(1.0f);
+        tableMatrix = glm::translate(tableMatrix, glm::vec3(0.0f, 0.0f, -1.0f));
+        tableMatrix = glm::scale(tableMatrix, glm::vec3(1.2f));
+        renderModelWithPBRMaterial(pbrShader, libraryTable, oakMat, tableMatrix);
+
+        // ========= 渲染椅子（桌子周围）=========
+        // 椅子 1（桌子左侧）
+        glm::mat4 stool1Matrix = glm::mat4(1.0f);
+        stool1Matrix = glm::translate(stool1Matrix, glm::vec3(-2.0f, 0.0f, -1.0f));
+        stool1Matrix = glm::scale(stool1Matrix, glm::vec3(1.0f));
+        renderModelWithPBRMaterial(pbrShader, stool, leatherMat, stool1Matrix, true);  // 使用GLOSS贴图
+
+        // 椅子 2（桌子右侧）
+        glm::mat4 stool2Matrix = glm::mat4(1.0f);
+        stool2Matrix = glm::translate(stool2Matrix, glm::vec3(2.0f, 0.0f, -1.0f));
+        stool2Matrix = glm::scale(stool2Matrix, glm::vec3(1.0f));
+        renderModelWithPBRMaterial(pbrShader, stool, leatherMat, stool2Matrix, true);  // 使用GLOSS贴图
+
+        // 椅子 3（桌子前方）
+        glm::mat4 stool3Matrix = glm::mat4(1.0f);
+        stool3Matrix = glm::translate(stool3Matrix, glm::vec3(0.0f, 0.0f, -3.5f));
+        stool3Matrix = glm::rotate(stool3Matrix, glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        stool3Matrix = glm::scale(stool3Matrix, glm::vec3(1.0f));
+        renderModelWithPBRMaterial(pbrShader, stool, leatherMat, stool3Matrix, true);  // 使用GLOSS贴图
+
+        // 椅子 4（桌子后方）
+        glm::mat4 stool4Matrix = glm::mat4(1.0f);
+        stool4Matrix = glm::translate(stool4Matrix, glm::vec3(0.0f, 0.0f, 1.5f));
+        stool4Matrix = glm::scale(stool4Matrix, glm::vec3(1.0f));
+        renderModelWithPBRMaterial(pbrShader, stool, leatherMat, stool4Matrix, true);  // 使用GLOSS贴图
+
+        // ========= 渲染饮水机（角落）=========
+        glm::mat4 dispenserMatrix = glm::mat4(1.0f);
+        dispenserMatrix = glm::translate(dispenserMatrix, glm::vec3(5.5f, 0.0f, 5.5f));
+        dispenserMatrix = glm::rotate(dispenserMatrix, glm::radians(-45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        dispenserMatrix = glm::scale(dispenserMatrix, glm::vec3(1.0f));
+        renderModelWithPBRMaterial(pbrShader, waterDispenser, metalMat, dispenserMatrix);
+
+        // ========= 渲染装饰球体（桌面装饰）=========
+        glm::mat4 sphereMatrix = glm::mat4(1.0f);
+        sphereMatrix = glm::translate(sphereMatrix, glm::vec3(0.0f, 0.8f, -1.0f));
+        sphereMatrix = glm::scale(sphereMatrix, glm::vec3(0.3f));
+        renderModelWithPBRMaterial(pbrShader, sphere, paintedMetalMat, sphereMatrix);
+
+        // ========= 渲染墙面装饰（使用cube作为装饰块）=========
+        // 左侧墙装饰
+        glm::mat4 wallDecor1Matrix = glm::mat4(1.0f);
+        wallDecor1Matrix = glm::translate(wallDecor1Matrix, glm::vec3(-6.5f, 2.5f, 0.0f));
+        wallDecor1Matrix = glm::scale(wallDecor1Matrix, glm::vec3(0.2f, 2.0f, 8.0f));
+        renderModelWithPBRMaterial(pbrShader, cube, tileMat, wallDecor1Matrix, true);  // 使用GLOSS贴图
+
+        // 右侧墙装饰
+        glm::mat4 wallDecor2Matrix = glm::mat4(1.0f);
+        wallDecor2Matrix = glm::translate(wallDecor2Matrix, glm::vec3(6.5f, 2.5f, 0.0f));
+        wallDecor2Matrix = glm::scale(wallDecor2Matrix, glm::vec3(0.2f, 2.0f, 8.0f));
+        renderModelWithPBRMaterial(pbrShader, cube, tileMat, wallDecor2Matrix, true);  // 使用GLOSS贴图
 
         glfwSwapBuffers(window);
         glfwPollEvents();

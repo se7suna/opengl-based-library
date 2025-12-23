@@ -25,12 +25,15 @@ struct PointLight {
     float intensity; // 光强（标量）
 };
 
-// 预留 4 个点光源位，实际使用数量由 lightCount 控制
-uniform PointLight lights[4];
+// 预留 8 个点光源位，实际使用数量由 lightCount 控制
+uniform PointLight lights[8];
 uniform int lightCount;  // 当前启用的点光源数量
 
 // 观察者位置（世界空间）
 uniform vec3 camPos;
+
+// 材质选项：是否使用GLOSS贴图（需要反转roughness）
+uniform bool useGlossMap;  // true表示roughnessMap实际上是GLOSS贴图，需要反转
 
 const float PI = 3.14159265359;
 
@@ -87,6 +90,10 @@ void main()
     vec3  albedo    = pow(texture(albedoMap,    TexCoords).rgb, vec3(2.2));
     float metallic  = texture(metallicMap,      TexCoords).r;
     float roughness = texture(roughnessMap,     TexCoords).r;
+    // 如果使用GLOSS贴图，需要反转（GLOSS = 1 - Roughness）
+    if (useGlossMap) {
+        roughness = 1.0 - roughness;
+    }
     float ao        = texture(aoMap,            TexCoords).r;
 
     // TODO: 以后引入 TBN 矩阵后再真正使用 normal map

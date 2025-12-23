@@ -19,8 +19,13 @@ struct PBRTextureMaterial {
 // 返回 OpenGL 纹理 ID（失败返回 0）
 GLuint LoadTexture2D(const std::string& path, bool srgb);
 
-// 针对 Poliigon_WoodVeneerOak_7760 材质的便捷加载函数
+// 针对各种 PBR 材质的便捷加载函数
 PBRTextureMaterial LoadMaterial_WoodVeneerOak_7760();
+PBRTextureMaterial LoadMaterial_WoodFloorAsh_4186();
+PBRTextureMaterial LoadMaterial_MetalGalvanizedZinc_7184();
+PBRTextureMaterial LoadMaterial_MetalPaintedMatte_7037();
+PBRTextureMaterial LoadMaterial_FabricLeatherCowhide_001();
+PBRTextureMaterial LoadMaterial_TilesTravertine_001();
 
 #endif
 
