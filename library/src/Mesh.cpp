@@ -1,19 +1,19 @@
-#include "Mesh.h"  // ±ØÐë°üº¬×ÔÉíÍ·ÎÄ¼þ
+#include "Mesh.h"  // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í·ï¿½Ä¼ï¿½
 
-// ¹¹Ôìº¯ÊýÊµÏÖ
+// ï¿½ï¿½ï¿½ìº¯ï¿½ï¿½Êµï¿½ï¿½
 Mesh::Mesh(std::vector<Vertex> vertices, std::vector<unsigned int> indices)
     : vertices(vertices), indices(indices) {
     setupMesh();
 }
 
-// »æÖÆº¯ÊýÊµÏÖ
+// ï¿½ï¿½ï¿½Æºï¿½ï¿½ï¿½Êµï¿½ï¿½
 void Mesh::Draw(Shader& shader) {
     glBindVertexArray(VAO);
     glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
 }
 
-// ³õÊ¼»¯»º³åÊµÏÖ
+// ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Êµï¿½ï¿½
 void Mesh::setupMesh() {
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
@@ -27,17 +27,21 @@ void Mesh::setupMesh() {
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), &indices[0], GL_STATIC_DRAW);
 
-    // ¶¥µãÎ»ÖÃ
+    // ï¿½ï¿½ï¿½ï¿½Î»ï¿½ï¿½
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
 
-    // ¶¥µã·¨Ïß
+    // ï¿½ï¿½ï¿½ã·¨ï¿½ï¿½
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Normal));
 
-    // ÎÆÀí×ø±ê
+    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, TexCoords));
+
+    // åˆ‡çº¿ï¼ˆç”¨äºŽæ³•çº¿è´´å›¾ï¼‰
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Tangent));
 
     glBindVertexArray(0);
 }

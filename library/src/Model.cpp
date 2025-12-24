@@ -8,13 +8,82 @@
 #include <glm/glm.hpp>
 
 Model::Model(const std::string& path) {
+    currentMaterial = "default";
+    materials["default"] = MTLMaterial();  // 默认材质
     loadOBJ(path);
+}
+
+glm::vec3 Model::getMaterialColor() const {
+    auto it = materials.find(currentMaterial);
+    if (it != materials.end()) {
+        return it->second.Kd;  // 返回漫反射颜色
+    }
+    return glm::vec3(0.8f);  // 默认颜色
+}
+
+bool Model::hasMTLMaterial() const {
+    // 检查是否有除了"default"之外的材质，或者default材质是否被修改过
+    if (materials.size() > 1) {
+        return true;  // 有多个材质，说明加载了mtl文件
+    }
+    // 检查default材质是否与默认值不同（说明可能从mtl文件加载了值）
+    auto it = materials.find("default");
+    if (it != materials.end()) {
+        // 如果Kd不是默认的0.8，说明可能从mtl加载了
+        return it->second.Kd != glm::vec3(0.8f);
+    }
+    return false;
 }
 
 void Model::Draw(Shader& shader) {
     for (unsigned int i = 0; i < meshes.size(); i++) {
         meshes[i].Draw(shader);
     }
+}
+
+// 加载MTL材质文件
+void Model::loadMTL(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        std::cerr << "WARNING::MODEL::MTL_FILE_OPEN_FAILED: " << path << std::endl;
+        return;
+    }
+    
+    std::string currentMtlName = "default";
+    std::string line;
+    
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        std::string type;
+        iss >> type;
+        
+        if (type == "newmtl") {
+            iss >> currentMtlName;
+            materials[currentMtlName] = MTLMaterial();  // 创建新材质
+        }
+        else if (type == "Ka") {
+            glm::vec3 ka;
+            iss >> ka.r >> ka.g >> ka.b;
+            materials[currentMtlName].Ka = ka;
+        }
+        else if (type == "Kd") {
+            glm::vec3 kd;
+            iss >> kd.r >> kd.g >> kd.b;
+            materials[currentMtlName].Kd = kd;
+        }
+        else if (type == "Ks") {
+            glm::vec3 ks;
+            iss >> ks.r >> ks.g >> ks.b;
+            materials[currentMtlName].Ks = ks;
+        }
+        else if (type == "Ns") {
+            float ns;
+            iss >> ns;
+            materials[currentMtlName].Ns = ns;
+        }
+    }
+    
+    file.close();
 }
 
 // 彻底修复的OBJ解析逻辑（重点：法线索引提取 + 纹理坐标解析）
@@ -29,12 +98,33 @@ void Model::loadOBJ(const std::string& path) {
         std::cerr << "ERROR::MODEL::FILE_OPEN_FAILED: " << path << std::endl;
         return;
     }
+    
+    // 获取OBJ文件所在目录
+    std::string objDir = ".";
+    size_t lastSlash = path.find_last_of("/\\");
+    if (lastSlash != std::string::npos) {
+        objDir = path.substr(0, lastSlash);
+    }
 
     std::string line;
     while (std::getline(file, line)) {
         std::istringstream iss(line);
         std::string type;
         iss >> type;
+        
+        // 处理mtllib指令
+        if (type == "mtllib") {
+            std::string mtlFileName;
+            iss >> mtlFileName;
+            std::string mtlPath = objDir + "/" + mtlFileName;
+            loadMTL(mtlPath);
+        }
+        // 处理usemtl指令
+        else if (type == "usemtl") {
+            std::string mtlName;
+            iss >> mtlName;
+            currentMaterial = mtlName;
+        }
 
         // 1. 解析顶点位置（v x y z）
         if (type == "v") {
@@ -206,6 +296,9 @@ void Model::loadOBJ(const std::string& path) {
             vert.TexCoords = glm::vec2(vert.Pos.x, vert.Pos.y);
         }
         
+        // 初始化切线为零向量（稍后计算）
+        vert.Tangent = glm::vec3(0.0f);
+        
         vertices.push_back(vert);
         indices.push_back(i);
     }
@@ -218,6 +311,12 @@ void Model::loadOBJ(const std::string& path) {
         }
     } else {
         std::cout << "MODEL::LOADED: " << path << " | Using normals from OBJ file" << std::endl;
+    }
+    
+    // 计算切线（用于法线贴图）
+    if (!vertices.empty() && !indices.empty() && hasTexCoords) {
+        calculateTangents(vertices, indices);
+        std::cout << "MODEL::LOADED: " << path << " | Tangents calculated for normal mapping" << std::endl;
     }
     
     if (hasTexCoords) {
@@ -286,6 +385,85 @@ void Model::calculateNormals(std::vector<Vertex>& vertices, const std::vector<un
         } else {
             // 如果法线仍为零向量（可能所有三角形都退化），设置为默认向上
             v.Normal = glm::vec3(0.0f, 1.0f, 0.0f);
+        }
+    }
+}
+
+// 计算切线：用于法线贴图的TBN矩阵
+void Model::calculateTangents(std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices) {
+    // 初始化所有切线为零向量
+    for (auto& v : vertices) {
+        v.Tangent = glm::vec3(0.0f);
+    }
+    
+    // 检查索引数量是否为3的倍数（三角形）
+    if (indices.size() % 3 != 0) {
+        std::cerr << "WARNING::MODEL::calculateTangents: indices size is not multiple of 3" << std::endl;
+    }
+    
+    // 遍历每个三角形，计算切线
+    for (unsigned int i = 0; i < indices.size(); i += 3) {
+        // 检查是否有足够的索引
+        if (i + 2 >= indices.size()) {
+            break;
+        }
+        
+        unsigned int i0 = indices[i];
+        unsigned int i1 = indices[i + 1];
+        unsigned int i2 = indices[i + 2];
+        
+        // 检查索引是否有效
+        if (i0 >= vertices.size() || i1 >= vertices.size() || i2 >= vertices.size()) {
+            continue;
+        }
+        
+        Vertex& v0 = vertices[i0];
+        Vertex& v1 = vertices[i1];
+        Vertex& v2 = vertices[i2];
+        
+        // 计算三角形的边向量
+        glm::vec3 edge1 = v1.Pos - v0.Pos;
+        glm::vec3 edge2 = v2.Pos - v0.Pos;
+        
+        // 计算UV差值
+        glm::vec2 deltaUV1 = v1.TexCoords - v0.TexCoords;
+        glm::vec2 deltaUV2 = v2.TexCoords - v0.TexCoords;
+        
+        // 计算切线和副切线（使用Mikkelsen的方法）
+        float f = 1.0f / (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y);
+        
+        glm::vec3 tangent;
+        tangent.x = f * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x);
+        tangent.y = f * (deltaUV2.y * edge1.y - deltaUV1.y * edge2.y);
+        tangent.z = f * (deltaUV2.y * edge1.z - deltaUV1.y * edge2.z);
+        
+        // 避免零向量
+        float length = glm::length(tangent);
+        if (length > 0.0001f) {
+            tangent = glm::normalize(tangent);
+            // 将切线累加到三个顶点
+            v0.Tangent += tangent;
+            v1.Tangent += tangent;
+            v2.Tangent += tangent;
+        }
+    }
+    
+    // 归一化所有顶点切线，并进行Gram-Schmidt正交化
+    for (auto& v : vertices) {
+        float length = glm::length(v.Tangent);
+        if (length > 0.0001f) {
+            v.Tangent = glm::normalize(v.Tangent);
+            
+            // Gram-Schmidt正交化：确保切线与法线垂直
+            v.Tangent = glm::normalize(v.Tangent - glm::dot(v.Tangent, v.Normal) * v.Normal);
+        } else {
+            // 如果切线仍为零向量，生成一个默认切线
+            // 使用法线计算一个垂直的切线
+            if (abs(v.Normal.x) < 0.9f) {
+                v.Tangent = glm::normalize(glm::cross(v.Normal, glm::vec3(1.0f, 0.0f, 0.0f)));
+            } else {
+                v.Tangent = glm::normalize(glm::cross(v.Normal, glm::vec3(0.0f, 0.0f, 1.0f)));
+            }
         }
     }
 }

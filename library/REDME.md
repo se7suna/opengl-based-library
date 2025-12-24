@@ -59,19 +59,66 @@
   - 帧时间同步，确保移动速度一致
   - 支持按下 `Ctrl` 键在“捕获鼠标（视角控制）/ 释放鼠标（操作 UI）”之间切换
 
-#### Task 4: PBR 材质与着色器（进行中）
+#### Task 4: PBR 材质与着色器 ✅
 - **PBR 顶点/片元着色器** (`shaders/pbr.vert`, `shaders/pbr.frag`)
   - 实现 Cook-Torrance PBR BRDF（GGX NDF + Smith 几何项 + Schlick 菲涅尔）
   - 使用 Metallic-Roughness 工作流
-  - 支持多点光源（当前使用 2 盏点光）
-  - 通过 `sampler2D` 采样 `albedo/metallic/roughness/ao` 贴图（法线贴图预留接口，后续可接入 TBN）
+  - 支持多点光源（当前使用 4 盏点光源，2x2 排布）
+  - 通过 `sampler2D` 采样 `albedo/metallic/roughness/ao` 贴图
+  - 支持 Triplanar Mapping（用于墙壁等大平面物体）
+  - 支持传统 UV 映射（用于地板等有正确 UV 的模型）
 - **PBR 纹理材质加载** (`src/Texture.h`, `src/Texture.cpp`)
   - 基于 `stb_image` 的 2D 纹理加载封装 `LoadTexture2D(path, srgb)`
   - 定义 `PBRTextureMaterial` 结构体，统一管理一套 PBR 贴图（albedo/normal/metallic/roughness/ao）
-  - 针对 `Poliigon_WoodVeneerOak_7760` 橡木纹材质实现专门的加载函数：
-    - 使用 `BaseColor/Normal/Metallic/Roughness/AmbientOcclusion` 五张贴图
-  - 在 `main.cpp` 中将该材质应用到 `model1` 上（左侧模型，当前为 `geodesic_classI_2.obj`）
-  - 保留原有 Blinn-Phong 管线用于对比（右侧 `sphere.obj`）
+  - 支持多种 PBR 材质加载：
+    - 橡木材质（WoodVeneerOak_7760）- 用于书架、桌子
+    - 木地板材质（WoodFloorAsh_4186）- 用于地板
+    - 金属材质（MetalGalvanizedZinc_7184）- 用于饮水机
+    - 喷漆金属材质（MetalPaintedMatte_7037）- 用于顶灯
+    - 皮革材质（FabricLeatherCowhide_001）- 用于椅子
+    - 大理石材质（TilesTravertine_001）- 用于墙面、天花板
+
+#### Task 5: 动态光照与阴影 ✅
+- **点光源系统**
+  - 实现 4 个点光源（2x2 排布在天花板上）
+  - 每个光源独立控制位置、颜色和强度
+  - 光源强度：150.0（高亮度配置）
+  - 支持距离衰减（平方反比）
+- **实时阴影映射（Shadow Mapping）**
+  - 为每个光源创建独立的阴影贴图（2048x2048 分辨率）
+  - 使用正交投影从光源视角渲染深度贴图
+  - 阴影贴图 FBO 和深度纹理管理
+- **阴影采样与过滤**
+  - 实现 PCF（Percentage-Closer Filtering）软阴影
+  - 3x3 采样，提供平滑的阴影边缘
+  - 动态阴影偏移（bias）计算，避免阴影失真
+  - 阴影范围检查，处理超出阴影贴图范围的情况
+- **阴影着色器** (`shaders/shadow.vert`, `shaders/shadow.frag`)
+  - 简化的深度渲染着色器
+  - 从光源视角渲染场景到深度贴图
+- **PBR 着色器阴影集成**
+  - 在 PBR 片元着色器中集成阴影采样
+  - 每个光源独立计算阴影因子
+  - 阴影与 PBR 光照正确混合
+
+#### Task 6: 场景构建 ✅
+- **图书馆场景布局**
+  - 25x40 单位的大型场景
+  - 6 排桌子，每排 12 张桌子短边相连
+  - 每排桌子两侧各 8 把椅子
+  - 每排桌子一端放置 2 个背靠背的书架
+  - 4 个顶灯（2x2 排布）照亮整个场景
+  - 饮水机放置在角落
+- **模型资源**
+  - 书架模型（bookshelf.obj）
+  - 桌子模型（library_table.obj）
+  - 椅子模型（stool.obj）
+  - 饮水机模型（water_dispenser.obj）
+  - 基础几何体（cube.obj, sphere.obj）
+- **场景元素**
+  - 地板、四面墙、天花板
+  - 所有物体使用 PBR 材质渲染
+  - 合理的物体位置和缩放
 
 ---
 
@@ -91,14 +138,26 @@ library/
 │
 ├── shaders/                # 着色器文件
 │   ├── basic.vert          # 顶点着色器（MVP 变换、法线变换）
-│   └── basic.frag          # 片段着色器（Blinn-Phong 光照）
+│   ├── basic.frag          # 片段着色器（Blinn-Phong 光照）
+│   ├── pbr.vert            # PBR 顶点着色器
+│   ├── pbr.frag            # PBR 片元着色器（Cook-Torrance BRDF）
+│   ├── shadow.vert          # 阴影映射顶点着色器
+│   └── shadow.frag          # 阴影映射片元着色器
 │
 ├── models/                 # 3D 模型文件
-│   ├── cube.obj
-│   ├── sphere.obj
-│   ├── geodesic_classI_2.obj
-│   ├── roadBike.obj
-│   └── simple_triangle.obj
+│   ├── cube.obj            # 立方体（用于地板、墙壁、天花板）
+│   ├── sphere.obj          # 球体（用于顶灯）
+│   ├── bookshelf.obj       # 书架模型
+│   ├── library_table.obj   # 图书馆桌子模型
+│   ├── stool.obj           # 椅子模型
+│   └── water_dispenser.obj # 饮水机模型
+├── materials/              # PBR 材质贴图
+│   ├── Poliigon_WoodVeneerOak_7760/      # 橡木材质
+│   ├── Poliigon_WoodFloorAsh_4186_Preview1/  # 木地板材质
+│   ├── Poliigon_MetalGalvanizedZinc_7184/    # 金属材质
+│   ├── Poliigon_MetalPaintedMatte_7037_Preview1/  # 喷漆金属材质
+│   ├── FabricLeatherCowhide001/           # 皮革材质
+│   └── TilesTravertine001/                 # 大理石材质
 │
 └── external/               # 第三方库
     ├── glad/               # GLAD (OpenGL 加载器)
@@ -157,16 +216,24 @@ main.cpp
   ├─ 创建相机 (Camera)
   ├─ 设置鼠标/键盘回调
   ├─ 加载模型 (Model::loadOBJ)
-  ├─ 创建着色器 (Shader)
-  ├─ 设置光照参数
+  ├─ 加载 PBR 材质贴图
+  ├─ 创建着色器 (PBR Shader, Shadow Shader)
+  ├─ 创建阴影贴图 FBO（4 个光源）
   └─ 渲染循环
       ├─ 计算帧时间 (deltaTime)
       ├─ 处理键盘输入 (WASD)
       ├─ 处理鼠标输入 (视角旋转)
-      ├─ 更新视图矩阵 (Camera::GetViewMatrix)
-      ├─ 更新投影矩阵 (根据窗口大小和FOV)
-      ├─ 设置 uniform
-      └─ Model::Draw() → Mesh::Draw()
+      ├─ 第一步：渲染阴影贴图（从每个光源视角）
+      │   ├─ 计算光源位置和光源空间矩阵
+      │   ├─ 为每个光源渲染场景到深度贴图
+      │   └─ 生成 4 张阴影贴图
+      ├─ 第二步：渲染主场景（应用阴影）
+      │   ├─ 更新视图和投影矩阵
+      │   ├─ 绑定阴影贴图到纹理单元
+      │   ├─ 设置光源参数（位置、颜色、强度）
+      │   ├─ 渲染场景物体（地板、墙壁、书架、桌子、椅子等）
+      │   └─ PBR 着色器应用阴影和光照
+      └─ 交换缓冲区
 ```
 
 ---
@@ -260,12 +327,13 @@ cmake --build . --config Release
 - [LearnOpenGL - PBR Theory](https://learnopengl.com/PBR/Theory)
 - Real Shading in Unreal Engine 4 (Brian Karis)
 
-#### 2. 动态光照与阴影 ⭐⭐⭐
-- [ ] 实现点光源系统（多个环境内灯光）
-- [ ] 实现方向光（模拟自然光）
-- [ ] 实现实时阴影映射（Shadow Mapping）
-  - [ ] 深度贴图生成
-  - [ ] 阴影采样与过滤（PCF/PCSS）
+#### 2. 动态光照与阴影 ⭐⭐⭐ ✅
+- [x] 实现点光源系统（4 个环境内灯光，2x2 排布）
+- [x] 实现实时阴影映射（Shadow Mapping）
+  - [x] 深度贴图生成（每个光源独立阴影贴图）
+  - [x] 阴影采样与过滤（PCF 软阴影）
+  - [x] 阴影偏移和范围检查
+- [ ] 实现方向光（模拟自然光，可选）
 - [ ] 优化阴影性能（级联阴影贴图可选）
 
 #### 3. 基于图像的光照 (IBL) ⭐⭐
@@ -294,15 +362,16 @@ cmake --build . --config Release
 - [x] 集成到主循环
 - [x] 平滑移动和视角旋转（基于帧时间）
 
-#### 6. 场景构建 ⭐⭐
-- [ ] 设计图书馆布局（参考嘉定图书馆）
-- [ ] 制作/获取模型资源：
-  - [ ] 书架模型
-  - [ ] 桌椅模型
-  - [ ] 窗户模型
-  - [ ] 其他装饰物
-- [ ] 准备 PBR 材质贴图
-- [ ] 场景管理类（Scene 或 Level）
+#### 6. 场景构建 ⭐⭐ ✅
+- [x] 设计图书馆布局（大型图书馆场景）
+- [x] 制作/获取模型资源：
+  - [x] 书架模型
+  - [x] 桌椅模型
+  - [x] 饮水机模型
+  - [x] 基础几何体（立方体、球体）
+- [x] 准备 PBR 材质贴图（6 种不同材质）
+- [x] 场景渲染（在 main.cpp 中实现完整场景）
+- [ ] 场景管理类（Scene 或 Level，可选优化）
 
 ### 📅 实施计划（参考）
 
@@ -336,9 +405,16 @@ cmake --build . --config Release
 ### 关键概念
 
 - **PBR (Physically Based Rendering)**: 基于微平面理论、能量守恒和菲涅尔反射
-- **IBL (Image-Based Lighting)**: 使用环境贴图模拟全局光照
+  - 使用 Cook-Torrance BRDF 模型
+  - GGX 法线分布函数（NDF）
+  - Smith 几何项（Geometry Term）
+  - Schlick 菲涅尔近似
 - **Shadow Mapping**: 实时阴影生成技术
-- **SSAO (Screen-Space Ambient Occlusion)**: 屏幕空间环境光遮蔽
+  - 从光源视角渲染深度贴图
+  - 在主渲染通道中比较深度值判断是否在阴影中
+  - PCF（Percentage-Closer Filtering）提供软阴影效果
+- **IBL (Image-Based Lighting)**: 使用环境贴图模拟全局光照（待实现）
+- **SSAO (Screen-Space Ambient Occlusion)**: 屏幕空间环境光遮蔽（待实现）
 
 ---
 
@@ -356,6 +432,9 @@ cmake --build . --config Release
 - **Task 1**: 基础渲染管线、Shader 类封装
 - **Task 2**: Mesh/Model 类、OBJ 加载、Blinn-Phong 光照、自动法线计算
 - **Task 3**: 第一人称相机控制（WASD 移动、鼠标视角控制）
+- **Task 4**: PBR 材质系统实现（Cook-Torrance BRDF、多种材质支持、Triplanar Mapping）
+- **Task 5**: 动态光照与阴影系统（4 个点光源、实时阴影映射、PCF 软阴影）
+- **Task 6**: 图书馆场景构建（完整场景布局、模型资源、PBR 材质应用）
 
 ---
 
