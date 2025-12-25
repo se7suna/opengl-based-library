@@ -3,44 +3,22 @@
 
 #include <string>
 #include <vector>
-#include <map>
-#include <glm/glm.hpp>
-#include "Mesh.h"  // Mesh.hModel Mesh
-
-// MTLæè´¨ç»“æ„
-struct MTLMaterial {
-    glm::vec3 Ka;  // ç¯å¢ƒå…‰é¢œè‰²
-    glm::vec3 Kd;  // æ¼«åå°„é¢œè‰²
-    glm::vec3 Ks;  // é•œé¢åå°„é¢œè‰²
-    float Ns;      // é•œé¢åå°„æŒ‡æ•°
-    
-    MTLMaterial() : Ka(0.2f), Kd(0.8f), Ks(0.1f), Ns(16.0f) {}
-};
+#include "Mesh.h"  // ±ØĞë°üº¬ Mesh.h£¨Model °üº¬ Mesh£©
 
 class Model {
 public:
     std::vector<Mesh> meshes;
-    std::map<std::string, MTLMaterial> materials;  // æè´¨æ˜ å°„
-    std::string currentMaterial;  // å½“å‰ä½¿ç”¨çš„æè´¨åç§°
 
-    // æ„é€ å‡½æ•°
+    // ¹¹Ôìº¯ÊıÉùÃ÷
     Model(const std::string& path);
 
-    // ç»˜åˆ¶å‡½æ•°
+    // »æÖÆº¯ÊıÉùÃ÷
     void Draw(Shader& shader);
-    
-    // è·å–æè´¨é¢œè‰²ï¼ˆç”¨äºè°ƒåˆ¶PBRæè´¨ï¼‰
-    glm::vec3 getMaterialColor() const;
-    
-    // æ£€æŸ¥æ˜¯å¦æœ‰æœ‰æ•ˆçš„MTLæè´¨ï¼ˆä¸æ˜¯é»˜è®¤æè´¨ï¼‰
-    bool hasMTLMaterial() const;
 
 private:
-    // å†…éƒ¨å‡½æ•° loadOBJ
+    // ÉùÃ÷ loadOBJ º¯Êı£¨¹©ÄÚ²¿µ÷ÓÃ£©
     void loadOBJ(const std::string& path);
-    void loadMTL(const std::string& path);
     void calculateNormals(std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices);
-    void calculateTangents(std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices);
 };
 
 #endif
