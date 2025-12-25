@@ -2,6 +2,12 @@
 cmake_minimum_required(VERSION 3.10)
 project(OpenGLProject)
 
+
+# Force UTF-8 source encoding on MSVC
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 
 # ===== 配置 GLAD =====
@@ -17,6 +23,9 @@ add_executable(${PROJECT_NAME}
     src/Model.cpp
     src/Camera.cpp
     src/Texture.cpp
+    src/ProceduralPlant.cpp
+    src/Scene.cpp
+    src/ShadowManager.cpp
 )
 
 # ===== 头文件包含路径 =====
@@ -26,6 +35,9 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/external/glfw/include
 )
 
+
+# Pass asset root directory to the executable (so it can find shaders/models/materials regardless of working directory)
+target_compile_definitions(${PROJECT_NAME} PRIVATE ASSET_DIR="${CMAKE_SOURCE_DIR}")
 # ===== 设置 GLFW 库文件 (Windows) =====
 set(GLFW_LIB
     ${CMAKE_SOURCE_DIR}/external/glfw/lib-vc2022/glfw3.lib
@@ -37,4 +49,22 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     glad
     ${GLFW_LIB}
     opengl32
+)
+# ====== Copy runtime assets next to the exe so relative paths work ======
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_SOURCE_DIR}/shaders"
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/shaders"
+)
+
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_SOURCE_DIR}/models"
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/models"
+)
+
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_SOURCE_DIR}/materials"
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/materials"
 )

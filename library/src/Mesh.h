@@ -4,35 +4,31 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <vector>
-#include "Shader.h"  // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Shader.hï¿½ï¿½Draw ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Shaderï¿½ï¿½
+#include "Shader.h"  // ±ØÐë°üº¬ Shader.h£¨Draw º¯ÊýÓÃ Shader£©
 
-// ï¿½ï¿½ï¿½ï¿½á¹¹ï¿½å£¨È«ï¿½Ö¿É¼ï¿½ï¿½ï¿½ï¿½ï¿½ Model ï¿½ï¿½Ê¹ï¿½Ã£ï¿½
+// ¶¥µã½á¹¹Ìå£¨È«¾Ö¿É¼û£¬¹© Model ÀàÊ¹ÓÃ£©
 struct Vertex {
     glm::vec3 Pos;
     glm::vec3 Normal;
     glm::vec2 TexCoords;
-    glm::vec3 Tangent;  // åˆ‡çº¿ï¼ˆç”¨äºŽæ³•çº¿è´´å›¾ï¼‰
 
     Vertex() {}
     Vertex(glm::vec3 pos, glm::vec3 normal, glm::vec2 tex)
-        : Pos(pos), Normal(normal), TexCoords(tex), Tangent(0.0f) {
-    }
-    Vertex(glm::vec3 pos, glm::vec3 normal, glm::vec2 tex, glm::vec3 tangent)
-        : Pos(pos), Normal(normal), TexCoords(tex), Tangent(tangent) {
+        : Pos(pos), Normal(normal), TexCoords(tex) {
     }
 };
 
-// Mesh ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+// Mesh ÀàÉùÃ÷
 class Mesh {
 public:
     std::vector<Vertex> vertices;
     std::vector<unsigned int> indices;
     unsigned int VAO, VBO, EBO;
 
-    // ï¿½ï¿½ï¿½ìº¯ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+    // ¹¹Ôìº¯ÊýÉùÃ÷
     Mesh(std::vector<Vertex> vertices, std::vector<unsigned int> indices);
 
-    // ï¿½ï¿½ï¿½Æºï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+    // »æÖÆº¯ÊýÉùÃ÷
     void Draw(Shader& shader);
 
 private:
