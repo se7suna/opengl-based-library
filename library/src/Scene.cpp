@@ -1,10 +1,13 @@
 #include "Scene.h"
 #include <glad/glad.h>
 #include <glm/gtc/matrix_transform.hpp>
+#include "ShadowManager.h"
 
 Scene::Scene() 
     : bookshelf(nullptr), libraryTable(nullptr), stool(nullptr), 
-      waterDispenser(nullptr), cube(nullptr), sphere(nullptr), ceilingLamp(nullptr) {
+      waterDispenser(nullptr), cube(nullptr), sphere(nullptr), ceilingLamp(nullptr),
+      virtualTime(12.0f),  // 默认中午12点
+      sunPosition(0.0f), sunDirection(0.0f) {
 }
 
 Scene::~Scene() {
@@ -53,7 +56,9 @@ void Scene::SetupLighting(Shader& pbrShader) {
     const float lampHeight = ceilingHeight - 0.3f;  // 4.8f
     
     pbrShader.use();
-    pbrShader.setInt("lightCount", 6);
+    
+    // 设置顶灯（0-5），全天都亮
+    int baseLightCount = 6;
     
     // 主灯光（中央上方，暖白色）
     pbrShader.setVec3("lights[0].position", glm::vec3(0.0f, lampHeight, 0.0f));
@@ -86,18 +91,26 @@ void Scene::SetupLighting(Shader& pbrShader) {
     pbrShader.setFloat("lights[5].intensity", 25.0f);
     
     // ========= 添加来自外界的方向光（自然光）=========
-    // 使用远距离点光源模拟方向光，从右侧（窗外）照射进来
-    // 方向：从右向左（x负方向），稍微向下倾斜
-    // 位置：在窗外很远的地方，模拟太阳光
-    const glm::vec3 sunDirection = glm::normalize(glm::vec3(-0.5f, -0.3f, 0.0f));  // 从右侧斜向下照射
-    const glm::vec3 sunPosition = glm::vec3(50.0f, 30.0f, 0.0f);  // 远距离位置，模拟方向光
-    const glm::vec3 sunColor = glm::vec3(1.0f, 0.98f, 0.95f);  // 温暖的阳光色
-    const float sunIntensity = 80.0f;  // 较强的自然光强度
+    // 根据虚拟时间计算太阳方向（24小时内绕场景一圈）
+    sunDirection = CalculateSunDirection(virtualTime);
+    
+    // 使用远距离点光源模拟方向光
+    // 位置：在太阳方向的很远的地方，模拟方向光
+    const float sunDistance = 15.0f;  // 模拟方向光
+    sunPosition = -sunDirection * sunDistance;  // 光源位置在太阳方向的相反方向
+    
+    // 根据时间调整太阳颜色和强度（平滑过渡）
+    glm::vec3 sunColor;
+    float sunIntensity;
+    CalculateSunLight(virtualTime, sunColor, sunIntensity);
     
     // 注意：由于shader只支持点光源，我们使用远距离点光源来模拟方向光
     // 在实际应用中，应该修改shader添加真正的方向光支持
     // 这里为了不修改shader，使用一个非常远的点光源
-    pbrShader.setInt("lightCount", 7);  // 增加光源数量
+    // 自然光始终放在lights[6]（顶灯在0-5）
+    pbrShader.setInt("lightCount", baseLightCount + 1);  // 6个顶灯 + 1个自然光
+    
+    // 自然光放在lights[6]
     pbrShader.setVec3("lights[6].position", sunPosition);
     pbrShader.setVec3("lights[6].color", sunColor);
     pbrShader.setFloat("lights[6].intensity", sunIntensity);
@@ -327,6 +340,146 @@ void Scene::Render(Shader& pbrShader, const glm::mat4& view, const glm::mat4& pr
     renderModelWithPBRMaterial(pbrShader, *waterDispenser, metalMat, dispenserMatrix);
 }
 
+void Scene::RenderShadowMap(ShadowManager& shadowManager) {
+    // 开始渲染阴影贴图
+    shadowManager.BeginShadowMapRender(sunPosition, sunDirection, true);
+
+    Shader* shadowShader = shadowManager.GetShadowShader();
+    
+    // 渲染所有需要投射阴影的物体（不包括顶灯）
+    // ========= 渲染地板 =========
+    glm::mat4 floorMatrix = glm::mat4(1.0f);
+    floorMatrix = glm::translate(floorMatrix, glm::vec3(0.0f, 0.0f, 0.0f));
+    floorMatrix = glm::scale(floorMatrix, glm::vec3(15.0f, 0.1f, 15.0f));
+    shadowShader->setMat4("model", floorMatrix);
+    cube->Draw(*shadowShader);
+
+    // ========= 渲染桌子 =========
+    const float tableShortEdge = 1.5f;
+    const float tableLongEdge = 2.5f;
+    const float tableSpacing = 0.1f;
+    const int numRows = 3;
+    const int tablesPerRow = 3;
+    const float rowSpacing = 4.0f;
+    const float startX = -5.0f;
+    const float startZ = -5.0f;
+    
+    for (int row = 0; row < numRows; ++row) {
+        float rowX = startX + row * rowSpacing;
+        for (int table = 0; table < tablesPerRow; ++table) {
+            float tableZ = startZ + table * (tableLongEdge + tableSpacing) + tableLongEdge * 0.5f;
+            glm::mat4 tableMatrix = glm::mat4(1.0f);
+            tableMatrix = glm::translate(tableMatrix, glm::vec3(rowX, 0.0f, tableZ));
+            tableMatrix = glm::scale(tableMatrix, glm::vec3(1.2f));
+            shadowShader->setMat4("model", tableMatrix);
+            libraryTable->Draw(*shadowShader);
+        }
+    }
+
+    // ========= 渲染椅子 =========
+    const glm::vec3 chairPositions[] = {
+        glm::vec3(-6.2f, 0.0f, -4.5f), glm::vec3(-6.2f, 0.0f, -2.0f), glm::vec3(-6.2f, 0.0f, 0.5f), glm::vec3(-6.2f, 0.0f, 3.0f),
+        glm::vec3(-3.8f, 0.0f, -4.5f), glm::vec3(-3.8f, 0.0f, -2.0f), glm::vec3(-3.8f, 0.0f, 0.5f), glm::vec3(-3.8f, 0.0f, 3.0f),
+        glm::vec3(-2.2f, 0.0f, -4.5f), glm::vec3(-2.2f, 0.0f, -2.0f), glm::vec3(-2.2f, 0.0f, 0.5f), glm::vec3(-2.2f, 0.0f, 3.0f),
+        glm::vec3(0.2f, 0.0f, -4.5f), glm::vec3(0.2f, 0.0f, -2.0f), glm::vec3(0.2f, 0.0f, 0.5f), glm::vec3(0.2f, 0.0f, 3.0f),
+        glm::vec3(1.8f, 0.0f, -4.5f), glm::vec3(1.8f, 0.0f, -2.0f), glm::vec3(1.8f, 0.0f, 0.5f), glm::vec3(1.8f, 0.0f, 3.0f),
+        glm::vec3(4.2f, 0.0f, -4.5f), glm::vec3(4.2f, 0.0f, -2.0f), glm::vec3(4.2f, 0.0f, 0.5f), glm::vec3(4.2f, 0.0f, 3.0f)
+    };
+    
+    const float chairRotations[] = {
+        180.0f, 180.0f, 180.0f, 180.0f,
+        180.0f, 180.0f, 180.0f, 180.0f,
+        180.0f, 180.0f, 180.0f, 180.0f,
+        180.0f, 180.0f, 180.0f, 180.0f,
+        180.0f, 180.0f, 180.0f, 180.0f,
+        180.0f, 180.0f, 180.0f, 180.0f
+    };
+    
+    const int totalChairs = sizeof(chairPositions) / sizeof(chairPositions[0]);
+    for (int i = 0; i < totalChairs; ++i) {
+        glm::mat4 stoolMatrix = glm::mat4(1.0f);
+        stoolMatrix = glm::translate(stoolMatrix, chairPositions[i]);
+        stoolMatrix = glm::rotate(stoolMatrix, glm::radians(chairRotations[i]), glm::vec3(0.0f, 1.0f, 0.0f));
+        stoolMatrix = glm::scale(stoolMatrix, glm::vec3(1.0f));
+        shadowShader->setMat4("model", stoolMatrix);
+        stool->Draw(*shadowShader);
+    }
+
+    // ========= 渲染书架 =========
+    const float bookshelfDepth = 1.0f;
+    const float bookshelfSpacing = 0.1f;
+    
+    for (int row = 0; row < numRows; ++row) {
+        float rowX = startX + row * rowSpacing;
+        float bookshelfZ = startZ - 1.5f;
+        
+        glm::mat4 bookshelf1Matrix = glm::mat4(1.0f);
+        bookshelf1Matrix = glm::translate(bookshelf1Matrix, glm::vec3(rowX + 0.2f, 0.0f, bookshelfZ + 0.09f));
+        bookshelf1Matrix = glm::rotate(bookshelf1Matrix, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.f));
+        bookshelf1Matrix = glm::scale(bookshelf1Matrix, glm::vec3(1.15f));
+        shadowShader->setMat4("model", bookshelf1Matrix);
+        bookshelf->Draw(*shadowShader);
+        
+        glm::mat4 bookshelf2Matrix = glm::mat4(1.0f);
+        bookshelf2Matrix = glm::translate(bookshelf2Matrix, glm::vec3(rowX - 0.22f, 0.0f, bookshelfZ - bookshelfDepth - bookshelfSpacing + 1.2f));
+        bookshelf2Matrix = glm::rotate(bookshelf2Matrix, glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        bookshelf2Matrix = glm::scale(bookshelf2Matrix, glm::vec3(1.15f));
+        shadowShader->setMat4("model", bookshelf2Matrix);
+        bookshelf->Draw(*shadowShader);
+    }
+
+    // ========= 渲染饮水机 =========
+    glm::mat4 dispenserMatrix = glm::mat4(1.0f);
+    dispenserMatrix = glm::translate(dispenserMatrix, glm::vec3(5.5f, 0.0f, 5.5f));
+    dispenserMatrix = glm::rotate(dispenserMatrix, glm::radians(-45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    dispenserMatrix = glm::scale(dispenserMatrix, glm::vec3(1.0f));
+    shadowShader->setMat4("model", dispenserMatrix);
+    waterDispenser->Draw(*shadowShader);
+
+    // ========= 渲染盆栽 =========
+    const float wallHeight = 5.0f;
+    const float floorThickness = 0.1f;
+    const float floorTopY = floorThickness * 0.5f;
+    const glm::vec3 plantPositions[6] = {
+        glm::vec3(-6.0f, floorTopY, -5.5f),
+        glm::vec3(-6.0f, floorTopY,  0.0f),
+        glm::vec3(-6.0f, floorTopY,  5.5f),
+        glm::vec3( 6.0f, floorTopY, -5.5f),
+        glm::vec3( 6.0f, floorTopY,  0.0f),
+        glm::vec3( 4.2f, floorTopY,  4.2f)
+    };
+    const float plantRotY[6] = { 25.0f, -10.0f, 55.0f, -35.0f, 15.0f, -60.0f };
+
+    for (int i = 0; i < 6; ++i) {
+        glm::mat4 plantM = glm::mat4(1.0f);
+        plantM = glm::translate(plantM, plantPositions[i]);
+        plantM = glm::rotate(plantM, glm::radians(plantRotY[i]), glm::vec3(0.0f, 1.0f, 0.0f));
+        shadowShader->setMat4("model", plantM);
+        plants[i].pot->Draw(*shadowShader);
+        plants[i].soil->Draw(*shadowShader);
+        plants[i].leaves->Draw(*shadowShader);
+    }
+
+    // 结束阴影贴图渲染
+    shadowManager.EndShadowMapRender();
+}
+
+void Scene::SetupShadowUniforms(Shader& pbrShader, ShadowManager& shadowManager) {
+    pbrShader.use();
+    
+    // 设置光源空间矩阵
+    pbrShader.setMat4("lightSpaceMatrix", shadowManager.GetLightSpaceMatrix());
+    
+    // 设置阴影参数
+    pbrShader.setFloat("shadowBias", shadowManager.GetShadowBias());
+    pbrShader.setBool("useShadows", true);
+    
+    // 绑定阴影贴图到纹理单元5
+    pbrShader.setInt("shadowMap", 5);
+    glActiveTexture(GL_TEXTURE5);
+    glBindTexture(GL_TEXTURE_2D, shadowManager.GetShadowMapTexture());
+}
+
 void Scene::renderModelWithPBRMaterial(Shader& pbrShader, Model& model, PBRTextureMaterial& mat, 
                                        glm::mat4& modelMatrix, bool useGloss) {
     pbrShader.use();
@@ -379,5 +532,114 @@ void Scene::renderMeshWithPBRMaterial(Shader& pbrShader, Mesh& mesh, PBRTextureM
     pbrShader.setFloat("material.ao", 1.0f);
 
     mesh.Draw(pbrShader);
+}
+
+void Scene::SetTime(float hour) {
+    // 将时间限制在0-24小时范围内
+    virtualTime = hour;
+    while (virtualTime < 0.0f) virtualTime += 24.0f;
+    while (virtualTime >= 24.0f) virtualTime -= 24.0f;
+}
+
+float Scene::GetTime() const {
+    return virtualTime;
+}
+
+glm::vec3 Scene::CalculateSunDirection(float hour) const {
+    // 将24小时映射到0-2π角度
+    // 12点（中午）时，太阳应该在x正方向（正对落地窗）
+    // 0点（午夜）时，太阳应该在x负方向（背对落地窗）
+    // 太阳围绕场景中心旋转一圈（在水平面上）
+    
+    // 将小时转换为角度（0点=0度，6点=90度，12点=180度，18点=270度）
+    // 这样12点时太阳在x正方向（正对落地窗）
+    float angle = glm::radians((hour - 12.0f) * 15.0f);  // 每小时15度，从12点开始
+    
+    // 计算太阳的水平方向（在xz平面上）
+    // 12点时：angle=0，direction应该是(1, 0, 0)即x正方向
+    // 6点时：angle=-90度，direction应该是(0, 0, 1)即z正方向
+    // 18点时：angle=90度，direction应该是(0, 0, -1)即z负方向
+    float x = glm::cos(angle);  // 12点时x=1，6点时x=0，18点时x=0
+    float z = glm::sin(angle);  // 12点时z=0，6点时z=1，18点时z=-1
+    
+    // 计算太阳的高度角（一天中太阳的高度变化）
+    // 6点和18点：太阳在地平线（高度角0度）
+    // 12点：太阳在最高点（高度角最大，比如60度）
+    float sunHeight = 0.0f;
+    if (hour >= 6.0f && hour <= 18.0f) {
+        // 白天：太阳高度从0度到最大再到0度
+        float normalizedTime = (hour - 6.0f) / 12.0f;  // 0到1
+        sunHeight = glm::sin(normalizedTime * glm::pi<float>());  // 0到1再到0
+        sunHeight *= 60.0f;  // 最大高度60度
+    } else {
+        // 夜晚：太阳在地平线以下
+        sunHeight = -30.0f;  // 稍微在地平线以下
+    }
+    
+    float y = -glm::sin(glm::radians(sunHeight));  // 向下为负，所以用负号
+    
+    // 归一化方向向量（从光源指向场景的方向）
+    // 注意：我们需要的是光源指向场景的方向，所以x和z需要取反
+    // 因为光源在太阳位置，我们需要的是从光源到场景中心的方向
+    glm::vec3 direction = glm::normalize(glm::vec3(-x, y, -z));
+    
+    return direction;
+}
+
+bool Scene::IsDaytime(float hour) const {
+    // 6点到18点为白天
+    return hour >= 6.0f && hour < 18.0f;
+}
+
+void Scene::CalculateSunLight(float hour, glm::vec3& outColor, float& outIntensity) const {
+    // 定义阳光和月光的颜色和强度
+    const glm::vec3 dayColor = glm::vec3(1.0f, 0.98f, 0.95f);  // 温暖的阳光色
+    const float dayIntensity = 3000.0f;
+    
+    const glm::vec3 nightColor = glm::vec3(0.7f, 0.75f, 0.9f);  // 较弱的月光色
+    const float nightIntensity = 10.0f;
+    
+    float t = 0.0f;  // 插值参数，0为夜晚，1为白天
+    
+    if (hour >= 8.0f && hour < 16.0f) {
+        // 8点到16点：完全白天
+        t = 1.0f;
+    } else if (hour >= 16.0f && hour < 18.0f) {
+        // 16点到18点：从白天过渡到夜晚
+        t = 1.0f - (hour - 16.0f) / 2.0f;  // 从1到0
+    } else if (hour >= 6.0f && hour < 8.0f) {
+        // 6点到8点：从夜晚过渡到白天
+        t = (hour - 6.0f) / 2.0f;  // 从0到1
+    } else {
+        // 其他时间：完全夜晚
+        t = 0.0f;
+    }
+    
+    // 线性插值
+    outColor = glm::mix(nightColor, dayColor, t);
+    outIntensity = glm::mix(nightIntensity, dayIntensity, t);
+}
+
+glm::vec4 Scene::CalculateBackgroundColor(float hour) const {
+    // 定义不同时间的背景颜色
+    // 中午12点：最亮的天蓝色
+    const glm::vec3 noonColor = glm::vec3(0.53f, 0.81f, 0.92f);
+    
+    // 午夜24点：深蓝色（不是纯黑）
+    const glm::vec3 midnightColor = glm::vec3(0.05f, 0.05f, 0.15f);
+    
+    // 计算时间在一天中的归一化位置（0-1），12点为0.5
+    float normalizedTime = hour / 24.0f;
+    
+    // 使用余弦函数实现平滑的日夜循环
+    // 12点时normalizedTime=0.5，cos(0)=1，brightness=1（最亮）
+    // 24点时normalizedTime=1.0或0.0，cos(π)=cos(-π)=-1，brightness=0（最暗）
+    float phase = (normalizedTime - 0.5f) * 2.0f * glm::pi<float>();  // 12点时phase=0
+    float brightness = (glm::cos(phase) + 1.0f) * 0.5f;  // 将cos从[-1,1]映射到[0,1]
+    
+    // 使用brightness进行插值
+    glm::vec3 backgroundColor = glm::mix(midnightColor, noonColor, brightness);
+    
+    return glm::vec4(backgroundColor, 1.0f);
 }
 

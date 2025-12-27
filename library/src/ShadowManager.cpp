@@ -1,13 +1,10 @@
 #include "ShadowManager.h"
-#include <iostream>
+#include <glm/gtc/matrix_transform.hpp>
 
 ShadowManager::ShadowManager()
-    : shadowMapFBO(0), shadowMapTexture(0), shadowMapSize(1024),
+    : shadowMapFBO(0), shadowMapTexture(0), shadowMapSize(2048),
       shadowShader(nullptr), shadowBias(0.005f), shadowRange(20.0f),
-      currentLightPos(0.0f), currentLightDir(0.0f, -1.0f, 0.0f), isDirectional(true) {
-    lightSpaceMatrix = glm::mat4(1.0f);
-    lightProjection = glm::mat4(1.0f);
-    lightView = glm::mat4(1.0f);
+      lightSpaceMatrix(1.0f) {
 }
 
 ShadowManager::~ShadowManager() {
@@ -19,13 +16,13 @@ void ShadowManager::Initialize(unsigned int size) {
     shadowBias = 0.005f;
     shadowRange = 20.0f;
 
-    // 创建阴影shader
+    // 创建阴影着色器
     shadowShader = new Shader("shaders/shadow.vert", "shaders/shadow.frag");
 
-    // 创建阴影贴图FBO
+    // 创建FBO
     glGenFramebuffers(1, &shadowMapFBO);
 
-    // 创建阴影贴图纹理（深度贴图）
+    // 创建深度纹理
     glGenTextures(1, &shadowMapTexture);
     glBindTexture(GL_TEXTURE_2D, shadowMapTexture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, shadowMapSize, shadowMapSize, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
@@ -36,17 +33,11 @@ void ShadowManager::Initialize(unsigned int size) {
     float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
     glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
 
-    // 绑定FBO并附加深度纹理
+    // 绑定FBO
     glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFBO);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, shadowMapTexture, 0);
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);
-
-    // 检查FBO完整性
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        std::cerr << "阴影贴图FBO创建失败！" << std::endl;
-    }
-
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
@@ -55,12 +46,10 @@ void ShadowManager::Cleanup() {
         glDeleteFramebuffers(1, &shadowMapFBO);
         shadowMapFBO = 0;
     }
-
     if (shadowMapTexture != 0) {
         glDeleteTextures(1, &shadowMapTexture);
         shadowMapTexture = 0;
     }
-
     if (shadowShader != nullptr) {
         delete shadowShader;
         shadowShader = nullptr;
@@ -68,25 +57,25 @@ void ShadowManager::Cleanup() {
 }
 
 void ShadowManager::BeginShadowMapRender(const glm::vec3& lightPos, const glm::vec3& lightDir, bool isDirectionalLight) {
-    currentLightPos = lightPos;
-    currentLightDir = lightDir;
-    isDirectional = isDirectionalLight;
-
     // 计算光源空间矩阵
     CalculateLightSpaceMatrix(lightPos, lightDir, isDirectionalLight);
 
-    // 绑定阴影贴图FBO
+    // 设置视口并绑定FBO
     glViewport(0, 0, shadowMapSize, shadowMapSize);
     glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFBO);
     glClear(GL_DEPTH_BUFFER_BIT);
 
-    // 使用阴影shader
+    // 启用深度测试
+    glEnable(GL_DEPTH_TEST);
+    glCullFace(GL_FRONT);  // 使用正面剔除减少阴影失真
+
     shadowShader->use();
     shadowShader->setMat4("lightSpaceMatrix", lightSpaceMatrix);
 }
 
 void ShadowManager::EndShadowMapRender() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glCullFace(GL_BACK);  // 恢复背面剔除
 }
 
 void ShadowManager::SetShadowMapSize(unsigned int size) {
@@ -109,41 +98,49 @@ void ShadowManager::SetShadowMapSize(unsigned int size) {
     float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
     glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
 
-    // 重新绑定到FBO
     glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFBO);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, shadowMapTexture, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void ShadowManager::UpdateLight(const glm::vec3& lightPos, const glm::vec3& lightDir, bool isDirectionalLight) {
-    currentLightPos = lightPos;
-    currentLightDir = lightDir;
-    isDirectional = isDirectionalLight;
-    CalculateLightSpaceMatrix(lightPos, lightDir, isDirectionalLight);
-}
-
 void ShadowManager::CalculateLightSpaceMatrix(const glm::vec3& lightPos, const glm::vec3& lightDir, bool isDirectionalLight) {
     if (isDirectionalLight) {
         // 方向光：使用正交投影
-        float nearPlane = 0.1f;
-        float farPlane = shadowRange;
-        float orthoSize = shadowRange * 0.5f;
-
-        lightProjection = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, nearPlane, farPlane);
+        // 场景范围：15x15单位（x和z方向），高度约5单位
+        // 使用足够大的范围覆盖整个场景
+        float orthoSize = 8.0f;  // 覆盖±8单位，确保覆盖15x15的场景（从-7.5到+7.5）
         
-        // 光源视图矩阵：从光源位置看向场景中心
-        glm::vec3 lightTarget = lightPos + lightDir * shadowRange;
-        lightView = glm::lookAt(lightPos, lightTarget, glm::vec3(0.0f, 1.0f, 0.0f));
+        // 光源位置和观察目标
+        glm::vec3 lightTarget = glm::vec3(0.0f, 0.0f, 0.0f);  // 场景中心
+        glm::vec3 lightPos_world = lightTarget - lightDir * shadowRange * 0.5f;
+        
+        // 计算观察空间中场景的深度范围
+        // 在观察空间中，场景中心在深度 shadowRange * 0.5f = 10.0f 处
+        // 场景大小：15x15单位，前后各约7.5单位
+        // 为了保持深度精度，使用一个紧凑但足够覆盖场景的范围
+        float distanceToCenter = shadowRange * 0.5f;  // 约10.0f
+        // 使用9单位的半范围，以场景中心为中心（覆盖范围18单位）
+        // 场景需要覆盖：10.0 ± 7.5 = 2.5 到 17.5，我们的范围1.0到19.0可以覆盖
+        float depthHalfRange = 9.0f;
+        float nearPlane = distanceToCenter - depthHalfRange;  // 1.0f
+        float farPlane = distanceToCenter + depthHalfRange;   // 19.0f
+
+        // 光源空间视图矩阵
+        glm::mat4 lightView = glm::lookAt(lightPos_world, lightTarget, glm::vec3(0.0f, 1.0f, 0.0f));
+
+        // 正交投影矩阵
+        glm::mat4 lightProjection = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, nearPlane, farPlane);
+
+        lightSpaceMatrix = lightProjection * lightView;
     } else {
-        // 点光源：使用透视投影（未来可扩展为立方体贴图）
-        float nearPlane = 0.1f;
-        float farPlane = shadowRange;
-        float fov = glm::radians(90.0f);
+        // 点光源：使用透视投影（如果需要的话）
+        float nearPlane = 9.0f;
+        float farPlane = shadowRange * 0.5f;
 
-        lightProjection = glm::perspective(fov, 1.0f, nearPlane, farPlane);
-        lightView = glm::lookAt(lightPos, lightPos + lightDir, glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::mat4 lightView = glm::lookAt(lightPos, lightPos + lightDir, glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::mat4 lightProjection = glm::perspective(glm::radians(90.0f), 1.0f, nearPlane, farPlane);
+
+        lightSpaceMatrix = lightProjection * lightView;
     }
-
-    lightSpaceMatrix = lightProjection * lightView;
 }
 

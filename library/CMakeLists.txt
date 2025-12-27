@@ -14,6 +14,23 @@ set(CMAKE_CXX_STANDARD 17)
 add_library(glad external/glad/src/glad.c)
 target_include_directories(glad PUBLIC external/glad/include)
 
+# ===== 配置 ImGui =====
+# 注意：需要先下载ImGui到external/imgui目录
+# 详细说明请参考 IMGUI_SETUP.md
+# 下载地址：https://github.com/ocornut/imgui/releases
+# 或使用: git clone https://github.com/ocornut/imgui.git external/imgui
+file(GLOB IMGUI_SOURCES 
+    "${CMAKE_SOURCE_DIR}/external/imgui/*.cpp"
+    "${CMAKE_SOURCE_DIR}/external/imgui/backends/imgui_impl_glfw.cpp"
+    "${CMAKE_SOURCE_DIR}/external/imgui/backends/imgui_impl_opengl3.cpp"
+)
+add_library(imgui STATIC ${IMGUI_SOURCES})
+target_include_directories(imgui PUBLIC 
+    "${CMAKE_SOURCE_DIR}/external/imgui"
+    "${CMAKE_SOURCE_DIR}/external/imgui/backends"
+    "${CMAKE_SOURCE_DIR}/external/glfw/include"  # ImGui后端需要GLFW头文件
+)
+
 # ===== 生成可执行文件 (exe) =====
 # 把 Shader.cpp 也加进去，不然链接的时候会报错
 add_executable(${PROJECT_NAME} 
@@ -44,9 +61,10 @@ set(GLFW_LIB
 )
 
 # ===== 链接库 =====
-# 链接 glad, glfw, 还有 Windows 自带的 opengl32
+# 链接 glad, glfw, imgui, 还有 Windows 自带的 opengl32
 target_link_libraries(${PROJECT_NAME} PRIVATE
     glad
+    imgui
     ${GLFW_LIB}
     opengl32
 )
