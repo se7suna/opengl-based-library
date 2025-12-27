@@ -5,6 +5,14 @@
 #include <iostream>
 #include <windows.h>  // 用于设置控制台编码（解决乱码）
 
+// ImGui 集成
+// 注意：需要先下载ImGui到external/imgui目录
+// 下载地址：https://github.com/ocornut/imgui/releases
+// 或使用 git clone https://github.com/ocornut/imgui.git external/imgui
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
+
 #include "Shader.h"
 #include "Camera.h"
 #include "Scene.h"
@@ -66,6 +74,19 @@ int main() {
 
     glEnable(GL_DEPTH_TEST);
 
+    // ========= 初始化 ImGui =========
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // 启用键盘导航
+    
+    // 设置ImGui样式
+    ImGui::StyleColorsDark();
+    
+    // 初始化ImGui平台/渲染器绑定
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 330");
+
     // ========= 初始化场景 =========
     Scene scene;
     scene.Initialize();
@@ -86,6 +107,11 @@ int main() {
         // 处理输入
         processInput(window);
 
+        // 开始ImGui帧
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
         // 更新视图和投影矩阵
         glm::mat4 view = camera.GetViewMatrix();
 
@@ -105,15 +131,69 @@ int main() {
             100.0f
         );
 
-        glClearColor(0.53f, 0.81f, 0.92f, 1.0f);  // 天蓝色背景，模拟窗外天空
+        // 根据时间设置背景颜色
+        glm::vec4 bgColor = scene.CalculateBackgroundColor(static_cast<float>(scene.GetTime()));
+        glClearColor(bgColor.r, bgColor.g, bgColor.b, bgColor.a);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        // ========= ImGui UI：时间滑动条（右上角）=========
+        {
+            // 设置窗口位置和大小（右上角）
+            ImGui::SetNextWindowPos(ImVec2(fbW - 180, 10), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(170, 50), ImGuiCond_Always);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 8));
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));  // 透明背景
+            ImGui::Begin("##TimeControl", nullptr, 
+                ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | 
+                ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
+                ImGuiWindowFlags_NoBackground);
+            
+            static float timeValue = 12.0f;  // 默认12点
+            
+            // 计算时间（HH:MM格式）
+            int hours = static_cast<int>(timeValue);
+            int minutes = static_cast<int>((timeValue - hours) * 60.0f);
+            
+            // 创建时间字符串
+            char timeStr[6];
+            snprintf(timeStr, sizeof(timeStr), "%02d:%02d", hours, minutes);
+            
+            // 显示时间文本（居中）
+            float textWidth = ImGui::CalcTextSize(timeStr).x;
+            ImGui::SetCursorPosX((ImGui::GetWindowWidth() - textWidth) * 0.5f);
+            ImGui::Text("%s", timeStr);
+            
+            // 无标签的滑动条
+            ImGui::PushItemWidth(150.0f);
+            ImGui::SliderFloat("##TimeSlider", &timeValue, 0.0f, 24.0f, "");
+            ImGui::PopItemWidth();
+            
+            // 更新场景时间（每次帧都更新，确保同步）
+            scene.SetTime(timeValue);
+            
+            ImGui::PopStyleColor();
+            ImGui::PopStyleVar();
+            ImGui::End();
+        }
+        
+        // 根据时间设置光照（每帧更新，因为时间可能改变）
+        scene.SetupLighting(pbrShader);
 
         // ========= 渲染场景 =========
         scene.Render(pbrShader, view, projection, camera.Position);
 
+        // 渲染ImGui
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
+
+    // 清理ImGui
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
 
     glfwTerminate();
     return 0;
