@@ -16,6 +16,7 @@
 #include "Shader.h"
 #include "Camera.h"
 #include "Scene.h"
+#include "ShadowManager.h"
 
 // 相机相关全局变量
 Camera camera(glm::vec3(0.0f, 1.5f, 4.0f));  // 调整相机初始位置，使其能更好地观察图书馆
@@ -93,6 +94,10 @@ int main() {
 
     // PBR 着色器
     Shader pbrShader("shaders/pbr.vert", "shaders/pbr.frag");
+
+    // ========= 初始化阴影管理器 =========
+    ShadowManager shadowManager;
+    shadowManager.Initialize(2048);  // 2048x2048阴影贴图
 
     // 设置光照
     scene.SetupLighting(pbrShader);
@@ -179,7 +184,16 @@ int main() {
         // 根据时间设置光照（每帧更新，因为时间可能改变）
         scene.SetupLighting(pbrShader);
 
-        // ========= 渲染场景 =========
+        // ========= 第一步：渲染阴影贴图（从光源视角）=========
+        scene.RenderShadowMap(shadowManager);
+
+        // ========= 第二步：恢复视口 =========
+        glViewport(0, 0, windowWidth, windowHeight);
+
+        // ========= 第三步：设置阴影相关uniform =========
+        scene.SetupShadowUniforms(pbrShader, shadowManager);
+
+        // ========= 第四步：渲染主场景（应用阴影）=========
         scene.Render(pbrShader, view, projection, camera.Position);
 
         // 渲染ImGui
@@ -194,6 +208,9 @@ int main() {
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
+
+    // 清理阴影管理器
+    shadowManager.Cleanup();
 
     glfwTerminate();
     return 0;

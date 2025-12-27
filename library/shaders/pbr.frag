@@ -4,6 +4,7 @@ out vec4 FragColor;
 in vec3 WorldPos;
 in vec3 Normal;
 in vec2 TexCoords;
+in vec4 FragPosLightSpace;  // 光源空间位置（用于阴影采样）
 
 // ===== PBR 材质贴图（Metallic-Roughness 工作流） =====
 // 这些 sampler2D 会在 C++ 中绑定：
@@ -17,6 +18,7 @@ uniform sampler2D normalMap;
 uniform sampler2D metallicMap;
 uniform sampler2D roughnessMap;
 uniform sampler2D aoMap;
+uniform sampler2D shadowMap;  // 阴影贴图
 
 // ===== 点光源定义（支持多个灯光） =====
 struct PointLight {
@@ -35,7 +37,49 @@ uniform vec3 camPos;
 // 材质选项：是否使用GLOSS贴图（需要反转roughness）
 uniform bool useGlossMap;  // true表示roughnessMap实际上是GLOSS贴图，需要反转
 
+// 阴影参数
+uniform float shadowBias;
+uniform bool useShadows;  // 是否启用阴影
+
 const float PI = 3.14159265359;
+
+// PCF软阴影采样函数
+float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
+    if (!useShadows) {
+        return 1.0;
+    }
+
+    // 执行透视除法
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    
+    // 变换到[0,1]范围
+    projCoords = projCoords * 0.5 + 0.5;
+    
+    // 检查是否在阴影贴图范围内
+    if (projCoords.z > 1.0 || projCoords.x < 0.0 || projCoords.x > 1.0 || 
+        projCoords.y < 0.0 || projCoords.y > 1.0) {
+        return 1.0;  // 超出范围，不在阴影中
+    }
+    
+    // 当前片段在光源空间中的深度
+    float currentDepth = projCoords.z;
+    
+    // 计算阴影偏移（基于法线和光线方向）
+    float bias = max(0.05 * (1.0 - dot(normal, lightDir)), shadowBias);
+    
+    // PCF软阴影：3x3采样
+    float shadow = 0.0;
+    vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
+    for (int x = -1; x <= 1; ++x) {
+        for (int y = -1; y <= 1; ++y) {
+            float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
+            shadow += currentDepth - bias > pcfDepth ? 0.0 : 1.0;
+        }
+    }
+    shadow /= 9.0;
+    
+    return shadow;
+}
 
 // ===== Cook-Torrance BRDF 相关函数 =====
 
@@ -117,6 +161,15 @@ void main()
     // 防止粗糙度为 0 导致 NDF 发散
     float rough = clamp(roughness, 0.04, 1.0);
 
+    // 计算阴影因子（只对自然光/方向光应用阴影）
+    float shadow = 1.0;
+    if (lightCount > 0) {
+        // 假设最后一个光源（lights[lightCount-1]）是自然光/方向光
+        int sunLightIndex = lightCount - 1;
+        vec3 sunLightDir = normalize(lights[sunLightIndex].position - WorldPos);
+        shadow = ShadowCalculation(FragPosLightSpace, N, sunLightDir);
+    }
+
     for (int i = 0; i < lightCount; ++i)
     {
         // 光照方向
@@ -147,6 +200,11 @@ void main()
         // 最终每盏灯的贡献
         vec3 diffuseBRDF = kD * albedo / PI;
         vec3 contribution = (diffuseBRDF + specular) * radiance * NdotL;
+
+        // 对自然光应用阴影（最后一个光源）
+        if (i == lightCount - 1) {
+            contribution *= shadow;
+        }
 
         Lo += contribution;
     }

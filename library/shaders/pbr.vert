@@ -7,10 +7,12 @@ layout (location = 2) in vec2 aTexCoords;
 out vec3 WorldPos;      // 世界空间位置
 out vec3 Normal;        // 世界空间法线
 out vec2 TexCoords;     // 纹理坐标（为以后贴图留接口）
+out vec4 FragPosLightSpace;  // 光源空间位置（用于阴影采样）
 
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
+uniform mat4 lightSpaceMatrix;  // 光源空间矩阵（用于阴影）
 
 void main()
 {
@@ -21,6 +23,9 @@ void main()
     Normal = mat3(transpose(inverse(model))) * aNormal;
 
     TexCoords = aTexCoords;
+
+    // 计算光源空间位置（用于阴影采样）
+    FragPosLightSpace = lightSpaceMatrix * vec4(WorldPos, 1.0);
 
     // 最终裁剪空间位置
     gl_Position = projection * view * vec4(WorldPos, 1.0);
