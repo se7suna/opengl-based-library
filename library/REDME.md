@@ -80,14 +80,31 @@
 
 #### Task 5: 动态光照与阴影 ✅
 - **点光源系统**
-  - 实现 4 个点光源（2x2 排布在天花板上）
+  - 实现 6 个点光源（全天开启，营造图书馆氛围）
   - 每个光源独立控制位置、颜色和强度
-  - 光源强度：150.0（高亮度配置）
+  - 光源位置与顶灯模型位置一致，悬挂在天花板下方
   - 支持距离衰减（平方反比）
+- **虚拟时间系统**
+  - 实现 24 小时虚拟时间循环（默认 12:00）
+  - 通过 ImGui 时间滑块实时调节时间（右上角，HH:MM 格式显示）
+  - 时间变化影响自然光方向和强度、背景亮度
+- **动态方向光（自然光）**
+  - 方向光在 24 小时内绕场景一圈
+  - 中午 12 点时正对落地窗（x 正方向）
+  - 方向光强度平滑过渡：
+    - 6:00-8:00 AM：从"较弱的月光"平滑过渡到"温暖的阳光"
+    - 4:00-6:00 PM：从"温暖的阳光"平滑过渡到"较弱的月光"
+  - 使用 `glm::mix` 实现颜色和强度的线性插值
+- **动态背景**
+  - 背景亮度随时间变化
+  - 中午 12 点（12:00）最亮（明亮的天空色）
+  - 午夜 12 点（00:00）最暗（深蓝色，非纯黑）
+  - 使用余弦函数实现平滑的亮度过渡
 - **实时阴影映射（Shadow Mapping）**
-  - 为每个光源创建独立的阴影贴图（2048x2048 分辨率）
+  - 为方向光创建阴影贴图（2048x2048 分辨率）
   - 使用正交投影从光源视角渲染深度贴图
-  - 阴影贴图 FBO 和深度纹理管理
+  - 动态计算光源空间矩阵，确保阴影正确覆盖整个场景
+  - 阴影贴图 FBO 和深度纹理管理（`ShadowManager` 类）
 - **阴影采样与过滤**
   - 实现 PCF（Percentage-Closer Filtering）软阴影
   - 3x3 采样，提供平滑的阴影边缘
@@ -96,29 +113,40 @@
 - **阴影着色器** (`shaders/shadow.vert`, `shaders/shadow.frag`)
   - 简化的深度渲染着色器
   - 从光源视角渲染场景到深度贴图
+  - 使用正面剔除（front-face culling）减少阴影失真
 - **PBR 着色器阴影集成**
   - 在 PBR 片元着色器中集成阴影采样
-  - 每个光源独立计算阴影因子
+  - 仅对方向光（lights[6]）应用阴影
   - 阴影与 PBR 光照正确混合
 
 #### Task 6: 场景构建 ✅
 - **图书馆场景布局**
-  - 25x40 单位的大型场景
-  - 6 排桌子，每排 12 张桌子短边相连
-  - 每排桌子两侧各 8 把椅子
-  - 每排桌子一端放置 2 个背靠背的书架
-  - 4 个顶灯（2x2 排布）照亮整个场景
+  - 15x15 单位的室内场景
+  - 多张桌子、椅子、书架
+  - 6 个顶灯（全天开启）照亮整个场景
   - 饮水机放置在角落
+  - 6 个程序化生成的盆栽装饰场景
+- **场景管理** (`src/Scene.h`, `src/Scene.cpp`)
+  - `Scene` 类统一管理所有场景对象、材质和光照
+  - 支持虚拟时间设置和查询
+  - 自动计算太阳方向和光照参数
+  - 自动计算背景颜色
+  - 提供阴影渲染和阴影 uniform 设置接口
 - **模型资源**
   - 书架模型（bookshelf.obj）
   - 桌子模型（library_table.obj）
   - 椅子模型（stool.obj）
   - 饮水机模型（water_dispenser.obj）
+  - 顶灯模型（ceiling_lamp.obj）
   - 基础几何体（cube.obj, sphere.obj）
 - **场景元素**
   - 地板、四面墙、天花板
+  - 落地窗（x 正方向，金属窗框）
   - 所有物体使用 PBR 材质渲染
   - 合理的物体位置和缩放
+- **程序化生成**
+  - 程序化生成盆栽植物（花盆、土壤、叶子）
+  - 使用纯色 PBR 材质，无需额外资源文件
 
 ---
 
@@ -134,7 +162,11 @@ library/
 │   ├── Shader.h/cpp        # 着色器封装类
 │   ├── Mesh.h/cpp          # 网格类
 │   ├── Model.h/cpp         # 模型加载类
-│   └── Camera.h/cpp        # 第一人称相机类
+│   ├── Camera.h/cpp        # 第一人称相机类
+│   ├── Scene.h/cpp         # 场景管理类（时间、光照、渲染）
+│   ├── ShadowManager.h/cpp # 阴影管理器（阴影贴图、光源空间矩阵）
+│   ├── Texture.h/cpp       # 纹理加载类（PBR 材质）
+│   └── ProceduralPlant.h/cpp # 程序化植物生成
 │
 ├── shaders/                # 着色器文件
 │   ├── basic.vert          # 顶点着色器（MVP 变换、法线变换）
@@ -166,7 +198,11 @@ library/
     ├── glfw/               # GLFW (窗口管理)
     │   ├── include/
     │   └── lib-vc2022/     # Visual Studio 2022 库文件
-    └── glm/                # GLM (数学库)
+    ├── glm/                # GLM (数学库)
+    ├── imgui/              # ImGui (即时模式 GUI)
+    │   ├── backends/       # GLFW/OpenGL3 后端
+    │   └── ...
+    └── stb_image.h         # stb_image (图像加载库)
 ```
 
 ---
@@ -208,31 +244,76 @@ library/
      glm::mat4 view = camera.GetViewMatrix();
      ```
 
+5. **Scene 类**
+   - 职责：统一管理场景对象、材质、光照和时间系统
+   - 功能：
+     - 模型和材质加载
+     - 虚拟时间管理（`SetTime()`, `GetTime()`）
+     - 太阳方向计算（24 小时循环）
+     - 太阳光照计算（平滑过渡）
+     - 背景颜色计算（随时间变化）
+     - 阴影渲染（`RenderShadowMap()`）
+     - 阴影 uniform 设置（`SetupShadowUniforms()`）
+   - 使用示例：
+     ```cpp
+     Scene scene;
+     scene.Initialize();
+     scene.SetTime(12.0f);  // 设置时间为 12:00
+     scene.SetupLighting(pbrShader);
+     scene.RenderShadowMap(shadowManager);
+     scene.Render(pbrShader, view, projection, camera.Position);
+     ```
+
+6. **ShadowManager 类**
+   - 职责：管理阴影贴图和光源空间矩阵
+   - 功能：
+     - 阴影贴图 FBO 和纹理管理
+     - 光源空间矩阵计算（动态适应场景范围）
+     - 阴影渲染流程管理（`BeginShadowMapRender()`, `EndShadowMapRender()`）
+   - 使用示例：
+     ```cpp
+     ShadowManager shadowManager;
+     shadowManager.Initialize(2048);
+     shadowManager.BeginShadowMapRender(lightPos, lightDir, true);
+     // 渲染场景到阴影贴图
+     shadowManager.EndShadowMapRender();
+     ```
 ### 当前渲染流程
 
 ```
 main.cpp
-  ├─ 初始化 GLFW/GLAD
+  ├─ 初始化 GLFW/GLAD/ImGui
   ├─ 创建相机 (Camera)
+  ├─ 创建场景 (Scene) 和阴影管理器 (ShadowManager)
   ├─ 设置鼠标/键盘回调
-  ├─ 加载模型 (Model::loadOBJ)
-  ├─ 加载 PBR 材质贴图
+  ├─ 加载模型和 PBR 材质（Scene::Initialize）
   ├─ 创建着色器 (PBR Shader, Shadow Shader)
-  ├─ 创建阴影贴图 FBO（4 个光源）
   └─ 渲染循环
       ├─ 计算帧时间 (deltaTime)
       ├─ 处理键盘输入 (WASD)
       ├─ 处理鼠标输入 (视角旋转)
-      ├─ 第一步：渲染阴影贴图（从每个光源视角）
-      │   ├─ 计算光源位置和光源空间矩阵
-      │   ├─ 为每个光源渲染场景到深度贴图
-      │   └─ 生成 4 张阴影贴图
-      ├─ 第二步：渲染主场景（应用阴影）
+      ├─ ImGui
+      ├─ 更新 ImGui UI（时间滑块，右上角）
+      │   └─ 根据滑块值更新场景时间 (Scene::SetTime)
+      ├─ 根据时间计算背景颜色 (Scene::CalculateBackgroundColor)
+      ├─ 设置背景颜色并清空缓冲区
+      ├─ 根据时间更新光照（方向光方向、强度、颜色）
+      │   └─ Scene::SetupLighting (计算太阳方向、光照参数)
+      ├─ 第一步：渲染阴影贴图（从方向光视角）
+      │   ├─ Scene::RenderShadowMap
+      │   │   ├─ ShadowManager::BeginShadowMapRender
+      │   │   │   └─ 计算光源空间矩阵（动态适应场景）
+      │   │   ├─ 使用阴影着色器渲染所有场景对象
+      │   │   └─ ShadowManager::EndShadowMapRender
+      ├─ 第二步：恢复视口
+      ├─ 第三步：设置阴影 uniform
+      │   └─ Scene::SetupShadowUniforms (绑定阴影贴图、设置矩阵)
+      ├─ 第四步：渲染主场景（应用阴影）
       │   ├─ 更新视图和投影矩阵
-      │   ├─ 绑定阴影贴图到纹理单元
-      │   ├─ 设置光源参数（位置、颜色、强度）
-      │   ├─ 渲染场景物体（地板、墙壁、书架、桌子、椅子等）
+      │   ├─ 设置光源参数（6 个点光源 + 1 个方向光）
+      │   ├─ 渲染场景物体（地板、墙壁、书架、桌子、椅子、盆栽等）
       │   └─ PBR 着色器应用阴影和光照
+      ├─ 渲染 ImGui UI
       └─ 交换缓冲区
 ```
 
@@ -261,6 +342,8 @@ main.cpp
 - **GLAD**: OpenGL 函数加载器（已包含）
 - **GLFW**: 窗口和输入管理（已包含，Windows x64）
 - **GLM**: OpenGL 数学库（已包含）
+- **ImGui**: 即时模式 GUI 库（已包含，用于时间滑块 UI）
+- **stb_image**: 图像加载库（单头文件，已包含）
 
 **注意**: 如果 `external/` 目录不完整，请参考下方的"依赖安装指南"。
 
@@ -328,12 +411,18 @@ cmake --build . --config Release
 - Real Shading in Unreal Engine 4 (Brian Karis)
 
 #### 2. 动态光照与阴影 ⭐⭐⭐ ✅
-- [x] 实现点光源系统（4 个环境内灯光，2x2 排布）
+- [x] 实现点光源系统（6 个环境内灯光，全天开启）
+- [x] 实现虚拟时间系统（24 小时循环，ImGui 滑块控制）
+- [x] 实现动态方向光（自然光，24 小时内绕场景一圈）
+- [x] 实现方向光强度平滑过渡（6-8 AM 和 4-6 PM）
+- [x] 实现动态背景（亮度随时间变化，12 PM 最亮，12 AM 深蓝色）
 - [x] 实现实时阴影映射（Shadow Mapping）
-  - [x] 深度贴图生成（每个光源独立阴影贴图）
+  - [x] 深度贴图生成（方向光阴影贴图，2048x2048）
+  - [x] 动态光源空间矩阵计算（适应场景范围）
   - [x] 阴影采样与过滤（PCF 软阴影）
   - [x] 阴影偏移和范围检查
-- [x] 实现方向光（模拟自然光，可选）
+  - [x] 物体间动态阴影遮挡
+- [x] 实现方向光（模拟自然光，随时间变化）
 - [ ] 优化阴影性能（级联阴影贴图可选）
 
 #### 3. 基于图像的光照 (IBL) ⭐⭐
@@ -363,24 +452,18 @@ cmake --build . --config Release
 - [x] 平滑移动和视角旋转（基于帧时间）
 
 #### 6. 场景构建 ⭐⭐ ✅
-- [x] 设计图书馆布局（大型图书馆场景）
+- [x] 设计图书馆布局（15x15 室内场景）
 - [x] 制作/获取模型资源：
   - [x] 书架模型
   - [x] 桌椅模型
   - [x] 饮水机模型
+  - [x] 顶灯模型
   - [x] 基础几何体（立方体、球体）
 - [x] 准备 PBR 材质贴图（6 种不同材质）
-- [x] 场景渲染（在 main.cpp 中实现完整场景）
-- [x] 场景管理类（Scene 或 Level，可选优化）
+- [x] 场景渲染（Scene 类统一管理）
+- [x] 场景管理类（Scene 类，包含时间、光照、渲染管理）
+- [x] 程序化生成（盆栽植物）
 
-### 📅 实施计划（参考）
-
-- **第 9 周**: 场景设计、模型和纹理准备
-- **第 10 周**: PBR 着色器实现、基础材质系统
-- **第 11 周**: 动态光照、阴影系统
-- **第 12 周**: IBL 环境反射、SSAO 后处理
-- **第 13 周**: 第一人称相机、交互优化
-- **第 14 周+**: 性能优化、Bug 修复、最终测试
 
 ### 🚫 明确排除的功能
 
@@ -413,6 +496,11 @@ cmake --build . --config Release
   - 从光源视角渲染深度贴图
   - 在主渲染通道中比较深度值判断是否在阴影中
   - PCF（Percentage-Closer Filtering）提供软阴影效果
+  - 动态光源空间矩阵计算，确保阴影正确覆盖整个场景
+- **虚拟时间系统**: 24 小时循环的时间模拟
+  - 使用余弦函数实现平滑的光照和背景过渡
+  - 方向光在 24 小时内绕场景一圈
+  - 光照强度在特定时间段平滑过渡（6-8 AM, 4-6 PM）
 - **IBL (Image-Based Lighting)**: 使用环境贴图模拟全局光照（待实现）
 - **SSAO (Screen-Space Ambient Occlusion)**: 屏幕空间环境光遮蔽（待实现）
 
@@ -433,11 +521,14 @@ cmake --build . --config Release
 - **Task 2**: Mesh/Model 类、OBJ 加载、Blinn-Phong 光照、自动法线计算
 - **Task 3**: 第一人称相机控制（WASD 移动、鼠标视角控制）
 - **Task 4**: PBR 材质系统实现（Cook-Torrance BRDF、多种材质支持、Triplanar Mapping）
-- **Task 5**: 动态光照与阴影系统（4 个点光源、实时阴影映射、PCF 软阴影）
+- **Task 5**: 动态光照与阴影系统（6 个点光源、实时阴影映射、PCF 软阴影）
 - **Task 6**: 图书馆场景构建（完整场景布局、模型资源、PBR 材质应用）
+- **Task 7**: 虚拟时间系统（24 小时循环、ImGui 时间滑块、方向光动态变化）
+- **Task 8**: 动态背景（背景亮度随时间变化）
+- **Task 9**: 方向光阴影系统（物体间动态阴影遮挡、动态光源空间矩阵计算）
 
 ---
 
-## 联系方式
+## 许可
 
-如有问题，请联系团队成员或查阅项目文档。
+采用 MIT License
